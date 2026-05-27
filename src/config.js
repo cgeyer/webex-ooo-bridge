@@ -5,6 +5,10 @@ const envSchema = z.object({
   WEBEX_CLIENT_ID: z.string().min(1),
   WEBEX_CLIENT_SECRET: z.string().min(1),
   WEBEX_REDIRECT_URI: z.string().url(),
+  WEBEX_WEBHOOK_TARGET_URL: z
+    .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().url().optional()),
+  WEBEX_WEBHOOK_SECRET: z
+    .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().min(1).optional()),
   PORT: z.coerce.number().default(3000),
   LOG_LEVEL: z.string().default("info"),
 });
@@ -22,6 +26,8 @@ export const config = {
     clientId: data.WEBEX_CLIENT_ID,
     clientSecret: data.WEBEX_CLIENT_SECRET,
     redirectUri: data.WEBEX_REDIRECT_URI,
+    webhookTargetUrl: data.WEBEX_WEBHOOK_TARGET_URL,
+    webhookSecret: data.WEBEX_WEBHOOK_SECRET,
     authorizeUrl: "https://webexapis.com/v1/authorize",
     tokenUrl: "https://webexapis.com/v1/access_token",
     apiBase: "https://webexapis.com/v1",
@@ -30,5 +36,10 @@ export const config = {
   logLevel: data.LOG_LEVEL,
 };
 
-/** Scopes for login + send 1:1 message (toPersonEmail on create message). */
-export const WEBEX_SCOPES = ["spark:kms", "spark:messages_write"].join(" ");
+/** Scopes: messages, webhooks (OOO), and KMS for encrypted content. */
+export const WEBEX_SCOPES = [
+  "spark:kms",
+  "spark:messages_write",
+  "spark:messages_read",
+  "spark:webhooks_write"
+].join(" ");
