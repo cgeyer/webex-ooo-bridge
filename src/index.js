@@ -3,15 +3,16 @@ import express from "express";
 import helmet from "helmet";
 import pino from "pino";
 import pinoHttp from "pino-http";
-import { MESSAGE_TEXT, TARGET_EMAIL } from "./constants.js";
 import { config, WEBEX_SCOPES } from "./config.js";
 import { savePkceState, takePkceState } from "./oauth-state.js";
 import { codeChallengeS256, generateCodeVerifier } from "./pkce.js";
-import { exchangeAuthorizationCode, registerOooWebhooks, sendDirectMessage } from "./webex.js";
+import { deregisterAllWebhooks, exchangeAuthorizationCode, getMe, registerOooWebhooks } from "./webex.js";
+import { getUserByPersonId, upsertUserState } from "./state-store.js";
 import { mountWebhookRoutes, WEBHOOK_MESSAGES_PATH } from "./webhook-handler.js";
 
 const log = pino({ level: config.logLevel });
 const app = express();
+const DEFAULT_OOO_MESSAGE = "I'm currently out of office and will reply when I am back.";
 
 app.use(helmet());
 app.use(pinoHttp({ logger: log }));
@@ -60,41 +61,51 @@ app.get("/webex/callback", async (req, res) => {
   }
 
   const { codeVerifier, enableOoo, oooMessage } = authState;
-  const messageText =
-    enableOoo && oooMessage.trim() ? oooMessage.trim() : MESSAGE_TEXT;
+  const normalizedMessage = oooMessage.trim() || DEFAULT_OOO_MESSAGE;
 
   try {
     const tokens = await exchangeAuthorizationCode(code, codeVerifier);
     const accessToken = tokens.access_token;
+    const me = await getMe(accessToken);
+    const personId = String(me.id);
+    const email = String(me.emails?.[0] ?? me.email ?? "");
+    const previous = getUserByPersonId(personId);
+    const accessTokenExpiresAt =
+      Math.floor(Date.now() / 1000) + Number(tokens.expires_in ?? 3600);
 
-    /** @type {{ mentioned: object, direct: object, targetUrl: string } | null} */
+    /** @type {{ mentioned: object, direct: object, targetUrl: string, secretFromEnv: boolean } | null} */
     let webhooks = null;
-    if (enableOoo) {
-      if (!config.webex.webhookTargetUrl) {
-        throw new Error(
-          "Out of office is enabled but WEBEX_WEBHOOK_TARGET_URL is not set. " +
-            `Example: http://localhost:${config.port}${WEBHOOK_MESSAGES_PATH}`
-        );
-      }
-      webhooks = await registerOooWebhooks(accessToken);
-      log.info(
-        {
-          mentionedId: webhooks.mentioned.id,
-          directId: webhooks.direct.id,
-          targetUrl: webhooks.targetUrl,
-        },
-        "registered OOO webhooks"
+    await deregisterAllWebhooks(accessToken);
+
+    if (enableOoo && !config.webex.webhookTargetUrl) {
+      throw new Error(
+        "Out of office is enabled but WEBEX_WEBHOOK_TARGET_URL is not set. " +
+          `Example: http://localhost:${config.port}${WEBHOOK_MESSAGES_PATH}`
       );
     }
 
-    const msg = await sendDirectMessage(accessToken, TARGET_EMAIL, messageText);
-    log.info(
-      { to: TARGET_EMAIL, messageId: msg.id, enableOoo, usedOooMessage: enableOoo && Boolean(oooMessage.trim()) },
-      "sent direct message"
-    );
+    if (enableOoo) {
+      webhooks = await registerOooWebhooks(accessToken);
+    }
+
+    const webhookIds = webhooks
+      ? [String(webhooks.mentioned.id), String(webhooks.direct.id)]
+      : [];
+    upsertUserState({
+      personId,
+      email,
+      accessToken,
+      refreshToken: String(tokens.refresh_token ?? previous?.refreshToken ?? ""),
+      accessTokenExpiresAt,
+      enableOoo,
+      oooMessage: normalizedMessage,
+      webhookIds,
+    });
+
+    log.info({ personId, enableOoo, webhookIds }, "updated user OOO and webhook state");
     return res
       .type("html")
-      .send(successPage(TARGET_EMAIL, msg.id, tokens, { enableOoo, oooMessage, messageText }, webhooks));
+      .send(successPage(tokens, { enableOoo, oooMessage: normalizedMessage }, webhooks));
   } catch (e) {
     log.error(e, "callback failed");
     return res.status(500).type("html").send(errorPage(e instanceof Error ? e.message : "Unknown error"));
@@ -108,7 +119,7 @@ app.use((err, _req, res, _next) => {
 
 app.listen(config.port, () => {
   log.info(
-    { port: config.port, target: TARGET_EMAIL, webhookTargetUrl: config.webex.webhookTargetUrl ?? null },
+    { port: config.port, webhookTargetUrl: config.webex.webhookTargetUrl ?? null },
     "listening"
   );
 });
@@ -123,7 +134,6 @@ function landingPage() {
     : `(set WEBEX_WEBHOOK_TARGET_URL, e.g. http://localhost:${config.port}${WEBHOOK_MESSAGES_PATH})`;
   return `<!doctype html><html><head><meta charset="utf-8"><title>Webex OOO test</title></head><body>
 <h1>Webex message test</h1>
-<p>Recipient: <strong>${escapeHtml(TARGET_EMAIL)}</strong></p>
 <form method="post" action="/auth/webex">
   <p>
     <label>
@@ -138,18 +148,16 @@ function landingPage() {
   <p><button type="submit">Sign in with Webex</button></p>
 </form>
 <p><small>If out of office is enabled, two webhooks are registered (mentions + direct) to <code>${webhookHint}</code>.</small></p>
-<p><small>If out of office is disabled, the default test message from <code>constants.js</code> is sent instead.</small></p>
+<p><small>If out of office is disabled, all webhooks of this user are de-registered.</small></p>
 </body></html>`;
 }
 
 /**
- * @param {string} recipientName
- * @param {string} messageId
  * @param {object} tokens
- * @param {{ enableOoo: boolean, oooMessage: string, messageText: string }} ooo
- * @param {{ mentioned: { id?: string, filter?: string }, direct: { id?: string, filter?: string }, targetUrl: string } | null} webhooks
+ * @param {{ enableOoo: boolean, oooMessage: string }} ooo
+ * @param {{ mentioned: { id?: string }, direct: { id?: string }, targetUrl: string, secretFromEnv: boolean } | null} webhooks
  */
-function successPage(recipientName, messageId, tokens, ooo, webhooks) {
+function successPage(tokens, ooo, webhooks) {
   const webhookSection = webhooks
     ? `<h2>Webhooks registered</h2>
 <p><strong>Target URL</strong>: <code>${escapeHtml(webhooks.targetUrl)}</code></p>
@@ -158,18 +166,14 @@ function successPage(recipientName, messageId, tokens, ooo, webhooks) {
   <li><strong>Direct</strong> — filter <code>roomType=direct</code>, id <code>${escapeHtml(String(webhooks.direct.id ?? ""))}</code></li>
 </ul>
 <p><small>Webhook secret: ${webhooks.secretFromEnv ? "from WEBEX_WEBHOOK_SECRET" : "auto-generated — set WEBEX_WEBHOOK_SECRET in .env to verify signatures"}</small></p>`
-    : `<h2>Webhooks</h2><p>Not registered (out of office was disabled).</p>`;
+    : `<h2>Webhooks</h2><p>All webhooks were de-registered because out of office is disabled.</p>`;
 
   return `<!doctype html><html><body>
-<h1>Message sent</h1>
-<p>Sent to <strong>${escapeHtml(recipientName)}</strong> on your behalf.</p>
-<p>Message id: <code>${escapeHtml(String(messageId))}</code></p>
+<h1>Authentication successful</h1>
 <h2>Out of office</h2>
 <p><strong>Enabled</strong>: ${ooo.enableOoo ? "yes" : "no"}</p>
 <p><strong>Configured message</strong>:</p>
 <pre>${escapeHtml(ooo.oooMessage || "(empty)")}</pre>
-<p><strong>Text actually sent</strong>:</p>
-<pre>${escapeHtml(ooo.messageText)}</pre>
 ${webhookSection}
 <h2>OAuth tokens</h2>
 <p><strong>Access token</strong><br><code>${escapeHtml(String(tokens?.access_token ?? ""))}</code></p>

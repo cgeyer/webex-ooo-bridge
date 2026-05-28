@@ -26,22 +26,34 @@ export async function exchangeAuthorizationCode(code, codeVerifier) {
 }
 
 /**
- * @param {string} accessToken
- * @param {string} toPersonEmail
- * @param {string} text
+ * @param {string} refreshToken
  */
-export async function sendDirectMessage(accessToken, toPersonEmail, text) {
-  const res = await fetch(`${config.webex.apiBase}/messages`, {
+export async function refreshAccessToken(refreshToken) {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: config.webex.clientId,
+    client_secret: config.webex.clientSecret,
+    refresh_token: refreshToken,
+  });
+  const res = await fetch(config.webex.tokenUrl, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ toPersonEmail: toPersonEmail.trim(), text }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
   });
   if (!res.ok) {
-    throw new Error(`Send message failed: ${res.status} ${await res.text()}`);
+    throw new Error(`Refresh token failed: ${res.status} ${await res.text()}`);
   }
+  return res.json();
+}
+
+/**
+ * @param {string} accessToken
+ */
+export async function getMe(accessToken) {
+  const res = await fetch(`${config.webex.apiBase}/people/me`, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`Get profile failed: ${res.status} ${await res.text()}`);
   return res.json();
 }
 
@@ -80,7 +92,6 @@ export async function createMessageWebhook(accessToken, { name, filter, secret }
 }
 
 /**
- * Registers OOO webhooks: @mentions and direct messages.
  * @param {string} accessToken
  */
 export async function registerOooWebhooks(accessToken) {
@@ -98,4 +109,71 @@ export async function registerOooWebhooks(accessToken) {
     }),
   ]);
   return { mentioned, direct, targetUrl: config.webex.webhookTargetUrl, secretFromEnv: Boolean(config.webex.webhookSecret) };
+}
+
+/**
+ * @param {string} accessToken
+ */
+export async function listWebhooks(accessToken) {
+  const res = await fetch(`${config.webex.apiBase}/webhooks`, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`List webhooks failed: ${res.status} ${await res.text()}`);
+  const out = await res.json();
+  return out.items ?? [];
+}
+
+/**
+ * @param {string} accessToken
+ * @param {string} webhookId
+ */
+export async function deleteWebhook(accessToken, webhookId) {
+  const res = await fetch(`${config.webex.apiBase}/webhooks/${webhookId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Delete webhook ${webhookId} failed: ${res.status} ${await res.text()}`);
+}
+
+/**
+ * @param {string} accessToken
+ */
+export async function deregisterAllWebhooks(accessToken) {
+  const hooks = await listWebhooks(accessToken);
+  await Promise.all(hooks.map((h) => deleteWebhook(accessToken, h.id)));
+  return hooks.map((h) => h.id);
+}
+
+/**
+ * @param {string} accessToken
+ * @param {string} messageId
+ */
+export async function getMessage(accessToken, messageId) {
+  const res = await fetch(`${config.webex.apiBase}/messages/${messageId}`, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`Get message failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+/**
+ * @param {string} accessToken
+ * @param {{ roomId: string, text: string, parentId?: string }} input
+ */
+export async function sendRoomMessage(accessToken, input) {
+  const payload = {
+    roomId: input.roomId,
+    text: input.text,
+    ...(input.parentId ? { parentId: input.parentId } : {}),
+  };
+  const res = await fetch(`${config.webex.apiBase}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Send room message failed: ${res.status} ${await res.text()}`);
+  return res.json();
 }

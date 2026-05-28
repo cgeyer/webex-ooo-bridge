@@ -9,6 +9,7 @@ const envSchema = z.object({
     .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().url().optional()),
   WEBEX_WEBHOOK_SECRET: z
     .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().min(1).optional()),
+  WEBEX_STATE_PATH: z.string().default("./data/state.json"),
   PORT: z.coerce.number().default(3000),
   LOG_LEVEL: z.string().default("info"),
 });
@@ -32,14 +33,17 @@ export const config = {
     tokenUrl: "https://webexapis.com/v1/access_token",
     apiBase: "https://webexapis.com/v1",
   },
+  statePath: data.WEBEX_STATE_PATH,
   port: data.PORT,
   logLevel: data.LOG_LEVEL,
 };
 
-/** Scopes: messages, webhooks (OOO), and KMS for encrypted content. */
+/** Scopes: messages, people, webhooks, and KMS for encrypted content. */
 export const WEBEX_SCOPES = [
   "spark:kms",
   "spark:messages_write",
   "spark:messages_read",
-  "spark:webhooks_write"
+  "spark:webhooks_read",
+  "spark:webhooks_write",
+  "spark:people_read"
 ].join(" ");
