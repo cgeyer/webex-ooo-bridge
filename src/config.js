@@ -9,7 +9,12 @@ const envSchema = z.object({
     .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().url().optional()),
   WEBEX_WEBHOOK_SECRET: z
     .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().min(1).optional()),
-  WEBEX_STATE_PATH: z.string().default("./data/state.json"),
+  DB_PATH: z.string().default("./data/app.db"),
+  ENCRYPTION_KEY: z.string().min(1),
+  SESSION_SECRET: z.string().min(32),
+  SECURE_COOKIES: z
+    .preprocess((v) => v === "true" || v === "1", z.boolean())
+    .default(false),
   PORT: z.coerce.number().default(3000),
   LOG_LEVEL: z.string().default("info"),
 });
@@ -22,6 +27,18 @@ if (!parsed.success) {
 
 const data = parsed.data;
 
+function parseKey32(name, value) {
+  let buf = Buffer.from(value, "base64");
+  if (buf.length !== 32) {
+    buf = Buffer.from(value, "hex");
+  }
+  if (buf.length !== 32) {
+    console.error(`${name} must decode to 32 bytes (generate with: openssl rand -base64 32)`);
+    process.exit(1);
+  }
+  return buf;
+}
+
 export const config = {
   webex: {
     clientId: data.WEBEX_CLIENT_ID,
@@ -33,7 +50,10 @@ export const config = {
     tokenUrl: "https://webexapis.com/v1/access_token",
     apiBase: "https://webexapis.com/v1",
   },
-  statePath: data.WEBEX_STATE_PATH,
+  dbPath: data.DB_PATH,
+  encryptionKey: parseKey32("ENCRYPTION_KEY", data.ENCRYPTION_KEY),
+  sessionSecret: data.SESSION_SECRET,
+  secureCookies: data.SECURE_COOKIES,
   port: data.PORT,
   logLevel: data.LOG_LEVEL,
 };
@@ -45,5 +65,5 @@ export const WEBEX_SCOPES = [
   "spark:messages_read",
   "spark:webhooks_read",
   "spark:webhooks_write",
-  "spark:people_read"
+  "spark:people_read",
 ].join(" ");

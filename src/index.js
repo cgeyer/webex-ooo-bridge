@@ -4,10 +4,20 @@ import helmet from "helmet";
 import pino from "pino";
 import pinoHttp from "pino-http";
 import { config, WEBEX_SCOPES } from "./config.js";
+import { createSession, deleteSession, getUserByPersonId, upsertUser } from "./db.js";
 import { savePkceState, takePkceState } from "./oauth-state.js";
+import { syncOooWebhooks } from "./ooo-sync.js";
 import { codeChallengeS256, generateCodeVerifier } from "./pkce.js";
-import { deregisterAllWebhooks, exchangeAuthorizationCode, getMe, registerOooWebhooks } from "./webex.js";
-import { getUserByPersonId, upsertUserState } from "./state-store.js";
+import {
+  clearSessionCookie,
+  loadSession,
+  newSessionId,
+  SESSION_MAX_AGE_SEC,
+  sessionCookieParser,
+  setSessionCookie,
+} from "./session.js";
+import { ensureAccessToken } from "./user-tokens.js";
+import { exchangeAuthorizationCode, getMe } from "./webex.js";
 import { mountWebhookRoutes, WEBHOOK_MESSAGES_PATH } from "./webhook-handler.js";
 
 const log = pino({ level: config.logLevel });
@@ -16,6 +26,8 @@ const DEFAULT_OOO_MESSAGE = "I'm currently out of office and will reply when I a
 
 app.use(helmet());
 app.use(pinoHttp({ logger: log }));
+app.use(sessionCookieParser);
+app.use(loadSession);
 app.use(express.urlencoded({ extended: false }));
 mountWebhookRoutes(app, log);
 
@@ -23,17 +35,17 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/", (_req, res) => {
+app.get("/", (req, res) => {
+  if (req.session) {
+    return res.type("html").send(dashboardPage(req.session.profile));
+  }
   res.type("html").send(landingPage());
 });
 
-app.post("/auth/webex", (req, res) => {
-  const enableOoo = req.body?.enableOoo === "on" || req.body?.enableOoo === "1";
-  const oooMessage = typeof req.body?.oooMessage === "string" ? req.body.oooMessage : "";
-
+app.post("/auth/webex", (_req, res) => {
   const verifier = generateCodeVerifier(64);
   const challenge = codeChallengeS256(verifier);
-  const state = savePkceState(verifier, { enableOoo, oooMessage });
+  const state = savePkceState(verifier);
   const url = new URL(config.webex.authorizeUrl);
   url.searchParams.set("client_id", config.webex.clientId);
   url.searchParams.set("response_type", "code");
@@ -57,11 +69,10 @@ app.get("/webex/callback", async (req, res) => {
   }
   const authState = takePkceState(state);
   if (!authState) {
-    return res.status(400).send("Invalid or expired state — try <a href=\"/\">again</a>.");
+    return res.status(400).send('Invalid or expired state — try <a href="/">again</a>.');
   }
 
-  const { codeVerifier, enableOoo, oooMessage } = authState;
-  const normalizedMessage = oooMessage.trim() || DEFAULT_OOO_MESSAGE;
+  const { codeVerifier } = authState;
 
   try {
     const tokens = await exchangeAuthorizationCode(code, codeVerifier);
@@ -70,28 +81,14 @@ app.get("/webex/callback", async (req, res) => {
     const personId = String(me.id);
     const email = String(me.emails?.[0] ?? me.email ?? "");
     const previous = getUserByPersonId(personId);
-    const accessTokenExpiresAt =
-      Math.floor(Date.now() / 1000) + Number(tokens.expires_in ?? 3600);
 
-    /** @type {{ mentioned: object, direct: object, targetUrl: string, secretFromEnv: boolean } | null} */
-    let webhooks = null;
-    await deregisterAllWebhooks(accessToken);
+    const enableOoo = previous?.enableOoo ?? false;
+    const normalizedMessage = previous?.oooMessage?.trim() || DEFAULT_OOO_MESSAGE;
 
-    if (enableOoo && !config.webex.webhookTargetUrl) {
-      throw new Error(
-        "Out of office is enabled but WEBEX_WEBHOOK_TARGET_URL is not set. " +
-          `Example: http://localhost:${config.port}${WEBHOOK_MESSAGES_PATH}`
-      );
-    }
+    const { webhookIds } = await syncOooWebhooks(accessToken, enableOoo);
+    const accessTokenExpiresAt = Math.floor(Date.now() / 1000) + Number(tokens.expires_in ?? 3600);
 
-    if (enableOoo) {
-      webhooks = await registerOooWebhooks(accessToken);
-    }
-
-    const webhookIds = webhooks
-      ? [String(webhooks.mentioned.id), String(webhooks.direct.id)]
-      : [];
-    upsertUserState({
+    upsertUser({
       personId,
       email,
       accessToken,
@@ -102,14 +99,59 @@ app.get("/webex/callback", async (req, res) => {
       webhookIds,
     });
 
-    log.info({ personId, enableOoo, webhookIds }, "updated user OOO and webhook state");
-    return res
-      .type("html")
-      .send(successPage(tokens, { enableOoo, oooMessage: normalizedMessage }, webhooks));
+    const sessionId = newSessionId();
+    const expiresAt = Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SEC;
+    createSession(sessionId, personId, expiresAt);
+    setSessionCookie(res, sessionId);
+
+    log.info({ personId, enableOoo, webhookIds }, "user signed in");
+    res.redirect(302, "/");
   } catch (e) {
     log.error(e, "callback failed");
     return res.status(500).type("html").send(errorPage(e instanceof Error ? e.message : "Unknown error"));
   }
+});
+
+app.post("/settings", async (req, res) => {
+  if (!req.session) {
+    return res.status(401).type("html").send(errorPage("You must sign in to update settings."));
+  }
+
+  const enableOoo = req.body?.enableOoo === "on" || req.body?.enableOoo === "1";
+  const oooMessage =
+    typeof req.body?.oooMessage === "string" && req.body.oooMessage.trim()
+      ? req.body.oooMessage.trim()
+      : DEFAULT_OOO_MESSAGE;
+
+  try {
+    const user = getUserByPersonId(req.session.personId);
+    if (!user) {
+      clearSessionCookie(res);
+      return res.status(401).type("html").send(errorPage("Session expired — please sign in again."));
+    }
+
+    const accessToken = await ensureAccessToken(user);
+    const { webhookIds } = await syncOooWebhooks(accessToken, enableOoo);
+
+    upsertUser({
+      ...user,
+      enableOoo,
+      oooMessage,
+      webhookIds,
+    });
+
+    log.info({ personId: user.personId, enableOoo, webhookIds }, "updated user settings");
+    res.redirect(302, "/");
+  } catch (e) {
+    log.error(e, "settings update failed");
+    return res.status(500).type("html").send(errorPage(e instanceof Error ? e.message : "Unknown error"));
+  }
+});
+
+app.post("/logout", (req, res) => {
+  if (req.session?.id) deleteSession(req.session.id);
+  clearSessionCookie(res);
+  res.redirect(302, "/");
 });
 
 app.use((err, _req, res, _next) => {
@@ -119,7 +161,7 @@ app.use((err, _req, res, _next) => {
 
 app.listen(config.port, () => {
   log.info(
-    { port: config.port, webhookTargetUrl: config.webex.webhookTargetUrl ?? null },
+    { port: config.port, webhookTargetUrl: config.webex.webhookTargetUrl ?? null, dbPath: config.dbPath },
     "listening"
   );
 });
@@ -129,59 +171,66 @@ function escapeHtml(s) {
 }
 
 function landingPage() {
+  return `<!doctype html><html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Webex Out of Office</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1.5rem; line-height: 1.5; color: #1a1a1a; }
+  h1 { font-size: 1.75rem; margin-bottom: 1rem; }
+  p { color: #444; margin-bottom: 2rem; }
+  button { font: inherit; padding: 0.65rem 1.25rem; background: #0073e6; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+  button:hover { background: #005bb5; }
+</style>
+</head><body>
+<h1>Webex Out of Office</h1>
+<p>Automatically reply in Webex when you are away — in direct messages and when you are @mentioned in spaces. Sign in to configure your message and turn replies on or off.</p>
+<form method="post" action="/auth/webex">
+  <button type="submit">Sign in with Webex</button>
+</form>
+</body></html>`;
+}
+
+/**
+ * @param {import("./db.js").UserProfile} profile
+ */
+function dashboardPage(profile) {
   const webhookHint = config.webex.webhookTargetUrl
     ? escapeHtml(config.webex.webhookTargetUrl)
-    : `(set WEBEX_WEBHOOK_TARGET_URL, e.g. http://localhost:${config.port}${WEBHOOK_MESSAGES_PATH})`;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Webex OOO test</title></head><body>
-<h1>Webex message test</h1>
-<form method="post" action="/auth/webex">
+    : `(set WEBEX_WEBHOOK_TARGET_URL)`;
+  const webhookList =
+    profile.webhookIds.length > 0
+      ? `<ul>${profile.webhookIds.map((id) => `<li><code>${escapeHtml(id)}</code></li>`).join("")}</ul>`
+      : "<p><em>None — out of office is disabled or webhooks were cleared.</em></p>";
+
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Webex OOO — Settings</title></head><body>
+<h1>Out of office settings</h1>
+<p>Signed in as <strong>${escapeHtml(profile.email || profile.personId)}</strong></p>
+<p><small>Webex person ID: <code>${escapeHtml(profile.personId)}</code></small></p>
+<form method="post" action="/settings">
   <p>
     <label>
-      <input type="checkbox" name="enableOoo" value="1">
+      <input type="checkbox" name="enableOoo" value="1"${profile.enableOoo ? " checked" : ""}>
       Enable out of office
     </label>
   </p>
   <p>
     <label for="oooMessage">Out of office message</label><br>
-    <textarea id="oooMessage" name="oooMessage" rows="5" cols="60" placeholder="I am out of the office until ..."></textarea>
+    <textarea id="oooMessage" name="oooMessage" rows="5" cols="60">${escapeHtml(profile.oooMessage)}</textarea>
   </p>
-  <p><button type="submit">Sign in with Webex</button></p>
+  <p><button type="submit">Save settings</button></p>
 </form>
-<p><small>If out of office is enabled, two webhooks are registered (mentions + direct) to <code>${webhookHint}</code>.</small></p>
-<p><small>If out of office is disabled, all webhooks of this user are de-registered.</small></p>
-</body></html>`;
-}
-
-/**
- * @param {object} tokens
- * @param {{ enableOoo: boolean, oooMessage: string }} ooo
- * @param {{ mentioned: { id?: string }, direct: { id?: string }, targetUrl: string, secretFromEnv: boolean } | null} webhooks
- */
-function successPage(tokens, ooo, webhooks) {
-  const webhookSection = webhooks
-    ? `<h2>Webhooks registered</h2>
-<p><strong>Target URL</strong>: <code>${escapeHtml(webhooks.targetUrl)}</code></p>
-<ul>
-  <li><strong>Mentions</strong> — filter <code>mentionedPeople=me</code>, id <code>${escapeHtml(String(webhooks.mentioned.id ?? ""))}</code></li>
-  <li><strong>Direct</strong> — filter <code>roomType=direct</code>, id <code>${escapeHtml(String(webhooks.direct.id ?? ""))}</code></li>
-</ul>
-<p><small>Webhook secret: ${webhooks.secretFromEnv ? "from WEBEX_WEBHOOK_SECRET" : "auto-generated — set WEBEX_WEBHOOK_SECRET in .env to verify signatures"}</small></p>`
-    : `<h2>Webhooks</h2><p>All webhooks were de-registered because out of office is disabled.</p>`;
-
-  return `<!doctype html><html><body>
-<h1>Authentication successful</h1>
-<h2>Out of office</h2>
-<p><strong>Enabled</strong>: ${ooo.enableOoo ? "yes" : "no"}</p>
-<p><strong>Configured message</strong>:</p>
-<pre>${escapeHtml(ooo.oooMessage || "(empty)")}</pre>
-${webhookSection}
-<h2>OAuth tokens</h2>
-<p><strong>Access token</strong><br><code>${escapeHtml(String(tokens?.access_token ?? ""))}</code></p>
-<p><strong>Refresh token</strong><br><code>${escapeHtml(String(tokens?.refresh_token ?? ""))}</code></p>
-<p><strong>Token type</strong>: <code>${escapeHtml(String(tokens?.token_type ?? ""))}</code></p>
-<p><strong>Access token expires in</strong>: <code>${escapeHtml(String(tokens?.expires_in ?? ""))}</code> seconds</p>
-<p><strong>Refresh token expires in</strong>: <code>${escapeHtml(String(tokens?.refresh_token_expires_in ?? ""))}</code> seconds</p>
-<p><a href="/">Home</a></p>
+<h2>Registered webhooks</h2>
+<p><small>Target URL: <code>${webhookHint}</code></small></p>
+${webhookList}
+<p>
+  <form method="post" action="/auth/webex" style="display:inline">
+    <button type="submit">Re-authenticate with Webex</button>
+  </form>
+  <form method="post" action="/logout" style="display:inline;margin-left:0.5em">
+    <button type="submit">Sign out</button>
+  </form>
+</p>
 </body></html>`;
 }
 

@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import express from "express";
 import { config } from "./config.js";
-import { getUserByWebhookId, upsertUserState } from "./state-store.js";
-import { getMessage, refreshAccessToken, sendRoomMessage } from "./webex.js";
+import { getUserByWebhookId } from "./db.js";
+import { ensureAccessToken } from "./user-tokens.js";
+import { getMessage, sendRoomMessage } from "./webex.js";
 
 /** Path segment for incoming Webex message webhooks (full URL = WEBEX_WEBHOOK_TARGET_URL). */
 export const WEBHOOK_MESSAGES_PATH = "/webhooks/messages";
@@ -42,10 +43,14 @@ export function mountWebhookRoutes(app, log) {
 
       let roomId = req.body?.data?.roomId;
       let senderPersonId = req.body?.data?.personId;
+      let messageParentId = req.body?.data?.parentId;
       if (!roomId || !senderPersonId) {
         const msg = await getMessage(accessToken, messageId);
         roomId = roomId ?? msg?.roomId;
         senderPersonId = senderPersonId ?? msg?.personId;
+        if (messageParentId == null && msg?.parentId) {
+          messageParentId = msg.parentId;
+        }
       }
       if (!roomId) return;
       if (senderPersonId === user.personId) return;
@@ -54,12 +59,13 @@ export function mountWebhookRoutes(app, log) {
         await sendRoomMessage(accessToken, { roomId, text: user.oooMessage.trim() });
         log.info({ webhookId, roomId, mode: "direct" }, "sent OOO direct reply");
       } else {
+        const replyParentId = typeof messageParentId === "string" ? messageParentId : messageId;
         await sendRoomMessage(accessToken, {
           roomId,
-          parentId: messageId,
+          parentId: replyParentId,
           text: user.oooMessage.trim(),
         });
-        log.info({ webhookId, roomId, mode: "group", parentId: messageId }, "sent OOO threaded reply");
+        log.info({ webhookId, roomId, mode: "group", parentId: replyParentId }, "sent OOO threaded reply");
       }
     } catch (err) {
       next(err);
@@ -76,21 +82,4 @@ function verifySignature(raw, signatureHeader, secret) {
   if (!signatureHeader) return false;
   const expected = crypto.createHmac("sha1", secret).update(raw).digest("hex");
   return expected === signatureHeader;
-}
-
-/**
- * @param {import("./state-store.js").UserState} user
- */
-async function ensureAccessToken(user) {
-  const now = Math.floor(Date.now() / 1000);
-  if (user.accessToken && user.accessTokenExpiresAt > now + 60) return user.accessToken;
-  const refreshed = await refreshAccessToken(user.refreshToken);
-  const next = {
-    ...user,
-    accessToken: refreshed.access_token,
-    refreshToken: refreshed.refresh_token ?? user.refreshToken,
-    accessTokenExpiresAt: now + Number(refreshed.expires_in ?? 3600),
-  };
-  upsertUserState(next);
-  return next.accessToken;
 }
