@@ -16,6 +16,7 @@ const envSchema = z.object({
     .preprocess((v) => v === "true" || v === "1", z.boolean())
     .default(false),
   PORT: z.coerce.number().default(3000),
+  LISTEN_HOST: z.string().default("0.0.0.0"),
   LOG_LEVEL: z.string().default("info"),
 });
 
@@ -55,6 +56,7 @@ export const config = {
   sessionSecret: data.SESSION_SECRET,
   secureCookies: data.SECURE_COOKIES,
   port: data.PORT,
+  listenHost: data.LISTEN_HOST,
   logLevel: data.LOG_LEVEL,
 };
 

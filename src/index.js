@@ -159,9 +159,14 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: "Server error" });
 });
 
-app.listen(config.port, () => {
+app.listen(config.port, config.listenHost, () => {
   log.info(
-    { port: config.port, webhookTargetUrl: config.webex.webhookTargetUrl ?? null, dbPath: config.dbPath },
+    {
+      host: config.listenHost,
+      port: config.port,
+      webhookTargetUrl: config.webex.webhookTargetUrl ?? null,
+      dbPath: config.dbPath,
+    },
     "listening"
   );
 });
