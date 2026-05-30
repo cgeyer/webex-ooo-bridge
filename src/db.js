@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { config } from "./config.js";
 import { decryptToken, encryptToken } from "./crypto-tokens.js";
 
@@ -29,15 +29,16 @@ const dbFile = path.isAbsolute(config.dbPath) ? config.dbPath : path.join(proces
  *   updatedAt: number,
  * }} UserProfile */
 
-let db;
+/** @type {DatabaseSync | null} */
+let db = null;
 
 function ensureDb() {
   if (db) return db;
   const dir = path.dirname(dbFile);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  db = new Database(dbFile);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
+  db = new DatabaseSync(dbFile);
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA foreign_keys = ON");
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       person_id TEXT PRIMARY KEY,
@@ -65,7 +66,7 @@ function ensureDb() {
 }
 
 /**
- * @param {object} row
+ * @param {Record<string, unknown>} row
  * @returns {UserRecord}
  */
 function rowToUser(row) {
