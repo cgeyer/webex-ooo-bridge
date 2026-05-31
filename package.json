@@ -11,6 +11,9 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
+    "@momentum-design/components": "^0.134.9",
+    "@momentum-design/fonts": "^0.2.6",
+    "@momentum-design/tokens": "^0.10.4",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
