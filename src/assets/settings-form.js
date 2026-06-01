@@ -105,7 +105,6 @@
       customElements.whenDefined("mdc-textarea"),
       customElements.whenDefined("mdc-datepicker"),
       customElements.whenDefined("mdc-timepicker"),
-      customElements.whenDefined("mdc-select"),
     ]).then(() => {
       requestAnimationFrame(bindSettingsToggles);
     });

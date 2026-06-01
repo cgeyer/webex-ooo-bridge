@@ -179,18 +179,46 @@ function layoutStyles() {
       grid-template-columns: repeat(2, minmax(12rem, 1fr));
       gap: 1.25rem;
     }
-    .ooo-end-fields mdc-select {
-      grid-column: 1 / -1;
-      --mdc-select-listbox-height: 18.75rem;
-    }
-    .ooo-end-fields mdc-select,
     .ooo-end-fields mdc-datepicker,
-    .ooo-end-fields mdc-timepicker {
+    .ooo-end-fields mdc-timepicker,
+    .ooo-timezone-field {
       width: 100%;
       max-width: 100%;
-      --mdc-select-width: 100%;
       --mdc-datepicker-width: 100%;
       --mdc-timepicker-width: 100%;
+    }
+    .ooo-timezone-field {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.375rem;
+    }
+    .ooo-field-label {
+      font-size: 0.875rem;
+      font-weight: 500;
+      line-height: 1.25rem;
+      color: var(--mds-color-theme-text-primary-normal);
+    }
+    .ooo-timezone-select {
+      width: 100%;
+      min-height: 2.5rem;
+      padding: 0.5rem 2rem 0.5rem 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--mds-color-theme-outline-primary-normal);
+      background: var(--mds-color-theme-background-solid-primary-normal);
+      color: var(--mds-color-theme-text-primary-normal);
+      font: inherit;
+      font-size: 0.875rem;
+      line-height: 1.25rem;
+      box-sizing: border-box;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6l4 4 4-4' stroke='%23595959' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.75rem center;
+    }
+    .ooo-timezone-select:focus {
+      outline: 2px solid var(--mds-color-theme-outline-accent-normal);
+      outline-offset: 1px;
     }
     .ooo-end-fields mdc-timepicker::part(spinbutton-group) {
       flex: 1 1 auto;
@@ -223,7 +251,7 @@ function timezoneSelectOptions(selectedTimeZone) {
   return listTimeZones()
     .map((zone) => {
       const isSelected = zone === selected ? " selected" : "";
-      return `<mdc-option value="${escapeHtml(zone)}" label="${escapeHtml(zone)}"${isSelected}></mdc-option>`;
+      return `<option value="${escapeHtml(zone)}"${isSelected}>${escapeHtml(zone)}</option>`;
     })
     .join("\n");
 }
@@ -328,15 +356,12 @@ export function dashboardPage(profile, webhookHint) {
                   locale-time-options-label="Time options"
                   locale-spinbutton-description="Use arrow keys to adjust"
                 ></mdc-timepicker>
-                <mdc-select
-                  name="oooEndTimezone"
-                  label="Time zone"
-                  value="${escapeHtml(endTimezoneValue)}"
-                >
-                  <mdc-selectlistbox>
+                <div class="ooo-timezone-field">
+                  <label class="ooo-field-label" for="oooEndTimezone">Time zone</label>
+                  <select id="oooEndTimezone" class="ooo-timezone-select" name="oooEndTimezone">
                     ${timezoneSelectOptions(endTimezoneValue)}
-                  </mdc-selectlistbox>
-                </mdc-select>
+                  </select>
+                </div>
               </div>
             </div>
             <mdc-toggle
