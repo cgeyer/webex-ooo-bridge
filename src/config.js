@@ -20,6 +20,8 @@ const envSchema = z.object({
   LOG_LEVEL: z.string().default("info"),
   WEBEX_BOT_TOKEN: z
     .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().min(1).optional()),
+  WEBEX_BOT_EMAIL: z
+    .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().email().optional()),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -53,6 +55,7 @@ export const config = {
     tokenUrl: "https://webexapis.com/v1/access_token",
     apiBase: "https://webexapis.com/v1",
     botToken: data.WEBEX_BOT_TOKEN,
+    botEmail: data.WEBEX_BOT_EMAIL,
   },
   dbPath: data.DB_PATH,
   encryptionKey: parseKey32("ENCRYPTION_KEY", data.ENCRYPTION_KEY),

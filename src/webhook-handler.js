@@ -65,6 +65,11 @@ export function mountWebhookRoutes(app, log) {
 
       const sender = await getPersonDetails(accessToken, String(senderPersonId));
       const senderEmail = String(sender.emails?.[0] ?? sender.email ?? "");
+      if (isDirectWebhook && isMessageFromBot(senderEmail)) {
+        log.debug({ webhookId, messageId, senderEmail }, "ignored direct message from notification bot");
+        return;
+      }
+
       const replyText = resolveOooReplyText(user, senderEmail);
       if (!replyText) return;
 
@@ -125,4 +130,11 @@ function verifySignature(raw, signatureHeader, secret) {
   if (!signatureHeader) return false;
   const expected = crypto.createHmac("sha1", secret).update(raw).digest("hex");
   return expected === signatureHeader;
+}
+
+/** @param {string} senderEmail */
+function isMessageFromBot(senderEmail) {
+  const botEmail = config.webex.botEmail;
+  if (!botEmail || !senderEmail.trim()) return false;
+  return senderEmail.trim().toLowerCase() === botEmail.trim().toLowerCase();
 }
