@@ -139,6 +139,7 @@ app.get("/webex/callback", async (req, res) => {
       sendOooToColleagues: previous?.sendOooToColleagues ?? false,
       useSameColleagueMessage: previous?.useSameColleagueMessage ?? true,
       internalOooMessage: previous?.internalOooMessage ?? normalizedMessage,
+      notifyIncomingMessages: previous?.notifyIncomingMessages ?? false,
       webhookIds,
     });
 
@@ -166,6 +167,7 @@ app.post("/settings", async (req, res) => {
       ? req.body.oooMessage.trim()
       : DEFAULT_OOO_MESSAGE;
   const sendOooToColleagues = parseToggle(req.body, "sendOooToColleagues");
+  const notifyIncomingMessages = parseToggle(req.body, "notifyIncomingMessages");
 
   try {
     const user = getUserByPersonId(req.session.personId);
@@ -196,11 +198,19 @@ app.post("/settings", async (req, res) => {
       sendOooToColleagues,
       useSameColleagueMessage,
       internalOooMessage,
+      notifyIncomingMessages,
       webhookIds,
     });
 
     log.info(
-      { personId: user.personId, enableOoo, sendOooToColleagues, useSameColleagueMessage, webhookIds },
+      {
+        personId: user.personId,
+        enableOoo,
+        sendOooToColleagues,
+        useSameColleagueMessage,
+        notifyIncomingMessages,
+        webhookIds,
+      },
       "updated user settings"
     );
     res.redirect(302, "/");

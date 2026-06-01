@@ -213,6 +213,7 @@ export function dashboardPage(profile, webhookHint) {
   const enableOooChecked = profile.enableOoo ? " checked" : "";
   const sendColleaguesChecked = profile.sendOooToColleagues ? " checked" : "";
   const sameMessageChecked = profile.useSameColleagueMessage ? " checked" : "";
+  const notifyIncomingChecked = profile.notifyIncomingMessages ? " checked" : "";
   const colleagueOptionsHidden = profile.sendOooToColleagues ? "" : " hidden";
   const internalMessageHidden =
     profile.sendOooToColleagues && !profile.useSameColleagueMessage ? "" : " hidden";
@@ -267,6 +268,11 @@ export function dashboardPage(profile, webhookHint) {
                 ></mdc-textarea>
               </div>
             </div>
+            <mdc-toggle
+              name="notifyIncomingMessages"
+              label="Notify me about incoming messages during my absence"
+              value="1"${notifyIncomingChecked}
+            ></mdc-toggle>
             ${submitButton("Save settings", "primary")}
           </form>
           <div class="ooo-actions">

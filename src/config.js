@@ -18,6 +18,8 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
   LISTEN_HOST: z.string().default("0.0.0.0"),
   LOG_LEVEL: z.string().default("info"),
+  WEBEX_BOT_TOKEN: z
+    .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().min(1).optional()),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -50,6 +52,7 @@ export const config = {
     authorizeUrl: "https://webexapis.com/v1/authorize",
     tokenUrl: "https://webexapis.com/v1/access_token",
     apiBase: "https://webexapis.com/v1",
+    botToken: data.WEBEX_BOT_TOKEN,
   },
   dbPath: data.DB_PATH,
   encryptionKey: parseKey32("ENCRYPTION_KEY", data.ENCRYPTION_KEY),
@@ -68,4 +71,5 @@ export const WEBEX_SCOPES = [
   "spark:webhooks_read",
   "spark:webhooks_write",
   "spark:people_read",
+  "spark:rooms_read",
 ].join(" ");

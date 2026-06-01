@@ -18,6 +18,7 @@ const dbFile = path.isAbsolute(config.dbPath) ? config.dbPath : path.join(proces
  *   sendOooToColleagues: boolean,
  *   useSameColleagueMessage: boolean,
  *   internalOooMessage: string,
+ *   notifyIncomingMessages: boolean,
  *   webhookIds: string[],
  *   createdAt: number,
  *   updatedAt: number,
@@ -32,6 +33,7 @@ const dbFile = path.isAbsolute(config.dbPath) ? config.dbPath : path.join(proces
  *   sendOooToColleagues: boolean,
  *   useSameColleagueMessage: boolean,
  *   internalOooMessage: string,
+ *   notifyIncomingMessages: boolean,
  *   webhookIds: string[],
  *   createdAt: number,
  *   updatedAt: number,
@@ -87,6 +89,7 @@ function migrateUsersTable(conn) {
   addColumn("ALTER TABLE users ADD COLUMN send_ooo_to_colleagues INTEGER NOT NULL DEFAULT 0");
   addColumn("ALTER TABLE users ADD COLUMN use_same_colleague_message INTEGER NOT NULL DEFAULT 1");
   addColumn("ALTER TABLE users ADD COLUMN internal_ooo_message TEXT NOT NULL DEFAULT ''");
+  addColumn("ALTER TABLE users ADD COLUMN notify_incoming_messages INTEGER NOT NULL DEFAULT 0");
 }
 
 /**
@@ -113,6 +116,7 @@ function rowToUser(row) {
     sendOooToColleagues: Boolean(row.send_ooo_to_colleagues),
     useSameColleagueMessage: row.use_same_colleague_message === undefined ? true : Boolean(row.use_same_colleague_message),
     internalOooMessage: String(row.internal_ooo_message ?? ""),
+    notifyIncomingMessages: Boolean(row.notify_incoming_messages),
     webhookIds,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -133,6 +137,7 @@ export function toUserProfile(user) {
     sendOooToColleagues: user.sendOooToColleagues,
     useSameColleagueMessage: user.useSameColleagueMessage,
     internalOooMessage: user.internalOooMessage,
+    notifyIncomingMessages: user.notifyIncomingMessages,
     webhookIds: user.webhookIds,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -154,8 +159,8 @@ export function upsertUser(user) {
       `INSERT INTO users (
         person_id, email, display_name, access_token_enc, refresh_token_enc, access_token_expires_at,
         enable_ooo, ooo_message, send_ooo_to_colleagues, use_same_colleague_message, internal_ooo_message,
-        webhook_ids_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        notify_incoming_messages, webhook_ids_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(person_id) DO UPDATE SET
         email = excluded.email,
         display_name = excluded.display_name,
@@ -167,6 +172,7 @@ export function upsertUser(user) {
         send_ooo_to_colleagues = excluded.send_ooo_to_colleagues,
         use_same_colleague_message = excluded.use_same_colleague_message,
         internal_ooo_message = excluded.internal_ooo_message,
+        notify_incoming_messages = excluded.notify_incoming_messages,
         webhook_ids_json = excluded.webhook_ids_json,
         updated_at = excluded.updated_at`
     )
@@ -182,6 +188,7 @@ export function upsertUser(user) {
       user.sendOooToColleagues ? 1 : 0,
       user.useSameColleagueMessage !== false ? 1 : 0,
       user.internalOooMessage ?? "",
+      user.notifyIncomingMessages ? 1 : 0,
       JSON.stringify(user.webhookIds ?? []),
       createdAt,
       updatedAt

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import express from "express";
+import { notifyUserAboutIncomingMessage } from "./absence-notification.js";
 import { config } from "./config.js";
 import { getUserByWebhookId } from "./db.js";
 import { resolveOooReplyText } from "./ooo-message.js";
@@ -45,8 +46,10 @@ export function mountWebhookRoutes(app, log) {
       let roomId = req.body?.data?.roomId;
       let senderPersonId = req.body?.data?.personId;
       let messageParentId = req.body?.data?.parentId;
+      let incomingMessage = null;
       if (!roomId || !senderPersonId) {
         const msg = await getMessage(accessToken, messageId);
+        incomingMessage = msg;
         roomId = roomId ?? msg?.roomId;
         senderPersonId = senderPersonId ?? msg?.personId;
         if (messageParentId == null && msg?.parentId) {
@@ -55,6 +58,10 @@ export function mountWebhookRoutes(app, log) {
       }
       if (!roomId || !senderPersonId) return;
       if (senderPersonId === user.personId) return;
+
+      if (!incomingMessage) {
+        incomingMessage = await getMessage(accessToken, messageId);
+      }
 
       const sender = await getPersonDetails(accessToken, String(senderPersonId));
       const senderEmail = String(sender.emails?.[0] ?? sender.email ?? "");
@@ -84,6 +91,24 @@ export function mountWebhookRoutes(app, log) {
           },
           "sent OOO threaded reply"
         );
+      }
+
+      if (user.notifyIncomingMessages) {
+        try {
+          await notifyUserAboutIncomingMessage(user, {
+            accessToken,
+            sender,
+            incomingMessage,
+            isDirect: isDirectWebhook,
+            roomId: String(roomId),
+            log,
+          });
+        } catch (notifyErr) {
+          log.error(
+            { err: notifyErr, personId: user.personId, messageId },
+            "failed to send absence notification"
+          );
+        }
       }
     } catch (err) {
       next(err);

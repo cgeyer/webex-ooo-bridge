@@ -160,6 +160,21 @@ export async function deregisterAllWebhooks(accessToken) {
 }
 
 /**
+ * Get Room Details — https://developer.webex.com/messaging/docs/api/v1/rooms/get-room-details
+ * @param {string} accessToken
+ * @param {string} roomId
+ */
+export async function getRoomDetails(accessToken, roomId) {
+  const res = await fetch(`${config.webex.apiBase}/rooms/${encodeURIComponent(roomId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`Get room details failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json();
+}
+
+/**
  * @param {string} accessToken
  * @param {string} messageId
  */
@@ -190,5 +205,32 @@ export async function sendRoomMessage(accessToken, input) {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`Send room message failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+/**
+ * Create a Message — https://developer.webex.com/messaging/docs/api/v1/messages/create-a-message
+ * @param {{ toPersonEmail: string, text?: string, markdown?: string }} input
+ */
+export async function sendBotDirectMessage(input) {
+  const botToken = config.webex.botToken;
+  if (!botToken) {
+    throw new Error("WEBEX_BOT_TOKEN is not configured");
+  }
+  const payload = {
+    toPersonEmail: input.toPersonEmail,
+    ...(input.markdown ? { markdown: input.markdown } : { text: input.text ?? "" }),
+  };
+  const res = await fetch(`${config.webex.apiBase}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${botToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`Send bot direct message failed: ${res.status} ${await res.text()}`);
+  }
   return res.json();
 }
