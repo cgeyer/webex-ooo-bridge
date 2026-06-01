@@ -8,6 +8,7 @@ import pinoHttp from "pino-http";
 import { config, WEBEX_SCOPES } from "./config.js";
 import { createSession, deleteSession, getUserByPersonId, upsertUser } from "./db.js";
 import { savePkceState, takePkceState } from "./oauth-state.js";
+import { parseOooEndSettings } from "./ooo-end-settings.js";
 import { syncOooWebhooks } from "./ooo-sync.js";
 import { codeChallengeS256, generateCodeVerifier } from "./pkce.js";
 import {
@@ -140,6 +141,10 @@ app.get("/webex/callback", async (req, res) => {
       useSameColleagueMessage: previous?.useSameColleagueMessage ?? true,
       internalOooMessage: previous?.internalOooMessage ?? normalizedMessage,
       notifyIncomingMessages: previous?.notifyIncomingMessages ?? false,
+      hasOooEndDate: previous?.hasOooEndDate ?? false,
+      oooEndDate: previous?.oooEndDate ?? "",
+      oooEndTime: previous?.oooEndTime ?? "",
+      oooEndTimezone: previous?.oooEndTimezone ?? "",
       webhookIds,
     });
 
@@ -188,6 +193,11 @@ app.post("/settings", async (req, res) => {
       }
     }
 
+    const endSettings = parseOooEndSettings(user, req.body);
+    if (endSettings.error) {
+      return res.status(400).type("html").send(errorPage(endSettings.error));
+    }
+
     const accessToken = await ensureAccessToken(user);
     const { webhookIds } = await syncOooWebhooks(accessToken, enableOoo);
 
@@ -199,6 +209,10 @@ app.post("/settings", async (req, res) => {
       useSameColleagueMessage,
       internalOooMessage,
       notifyIncomingMessages,
+      hasOooEndDate: endSettings.hasOooEndDate,
+      oooEndDate: endSettings.oooEndDate,
+      oooEndTime: endSettings.oooEndTime,
+      oooEndTimezone: endSettings.oooEndTimezone,
       webhookIds,
     });
 
@@ -209,6 +223,7 @@ app.post("/settings", async (req, res) => {
         sendOooToColleagues,
         useSameColleagueMessage,
         notifyIncomingMessages,
+        hasOooEndDate: endSettings.hasOooEndDate,
         webhookIds,
       },
       "updated user settings"

@@ -3,6 +3,7 @@ import express from "express";
 import { notifyUserAboutIncomingMessage } from "./absence-notification.js";
 import { config } from "./config.js";
 import { getUserByWebhookId } from "./db.js";
+import { deactivateOooIfExpired } from "./ooo-expiry.js";
 import { resolveOooReplyText } from "./ooo-message.js";
 import { ensureAccessToken } from "./user-tokens.js";
 import { getMessage, getPersonDetails, sendRoomMessage } from "./webex.js";
@@ -40,6 +41,15 @@ export function mountWebhookRoutes(app, log) {
       if (!user || !user.enableOoo) return;
 
       const accessToken = await ensureAccessToken(user);
+      const webhookData =
+        req.body?.data && typeof req.body.data === "object" ? req.body.data : undefined;
+
+      if (
+        await deactivateOooIfExpired(user, accessToken, messageId, webhookData, log, getMessage)
+      ) {
+        return;
+      }
+
       const filter = String(req.body?.filter ?? "");
       const isDirectWebhook = filter.includes("roomType=direct");
 
