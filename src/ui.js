@@ -4,6 +4,7 @@ export const MDS = {
   fontsCss: "/assets/momentum/fonts/css/fonts.css",
   fontWoff2: "/assets/momentum/fonts/inter/Inter.var.woff2",
   componentsJs: "/assets/momentum/components/browser/index.js",
+  settingsFormJs: "/assets/app/settings-form.js",
   // Typography tokens (--mds-font-family-primary, etc.) live on .mds-typography, not the theme class.
   themeClass: "mds-theme-stable-lightWebex mds-typography",
 };
@@ -37,9 +38,9 @@ ${textLines}
 }
 
 /**
- * @param {{ title: string, content: string }} options
+ * @param {{ title: string, content: string, scripts?: string }} options
  */
-function renderPage({ title, content }) {
+function renderPage({ title, content, scripts = "" }) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -60,13 +61,16 @@ function renderPage({ title, content }) {
         </mdc-appheader>
         <main class="ooo-main">${content}</main>
         <footer class="ooo-footer">
-          Powered by
-          <mdc-link href="https://momentum.design" target="_blank" rel="noopener noreferrer">Momentum Design</mdc-link>
+          <span class="ooo-footer-credit">
+            Powered by
+            <mdc-link inline size="small" href="https://momentum.design" target="_blank" rel="noopener noreferrer">Momentum Design</mdc-link>
+          </span>
         </footer>
       </div>
     </mdc-iconprovider>
   </mdc-themeprovider>
   <script src="${MDS.componentsJs}"></script>
+  ${scripts}
 </body>
 </html>`;
 }
@@ -125,6 +129,17 @@ function layoutStyles() {
       border-top: 1px solid var(--mds-color-theme-outline-secondary-normal);
       background: var(--mds-color-theme-background-solid-primary-normal);
     }
+    .ooo-footer-credit {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.25rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .ooo-footer mdc-link::part(anchor) {
+      font-size: inherit;
+      line-height: inherit;
+    }
     .ooo-form { display: flex; flex-direction: column; gap: 1.25rem; margin-top: 1.25rem; }
     .ooo-button {
       display: inline-flex; align-items: center; justify-content: center;
@@ -148,9 +163,15 @@ function layoutStyles() {
     .ooo-button-secondary:hover {
       background: var(--mds-color-theme-background-secondary-subtle);
     }
-    .ooo-card-spaced { margin-top: 1rem; display: block; }
+    .ooo-colleague-options {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .ooo-colleague-options[hidden],
+    .ooo-internal-message[hidden] { display: none; }
     .ooo-actions { display: flex; flex-wrap: wrap; gap: 0.625rem; margin-top: 1.25rem; }
-    .ooo-list { margin: 0.75rem 0 0; padding-left: 1.25rem; }
+    .ooo-debug { display: none; }
     .ooo-main code {
       font-family: ui-monospace, "SF Mono", Menlo, monospace;
       font-size: 0.8125rem;
@@ -160,6 +181,10 @@ function layoutStyles() {
       overflow-wrap: anywhere;
     }
   `;
+}
+
+function settingsFormScriptTag() {
+  return `<script src="${MDS.settingsFormJs}"></script>`;
 }
 
 export function landingPage() {
@@ -184,46 +209,66 @@ export function landingPage() {
  * @param {string} webhookHint
  */
 export function dashboardPage(profile, webhookHint) {
-  const webhookList =
-    profile.webhookIds.length > 0
-      ? `<ul class="ooo-list">${profile.webhookIds.map((id) => `<li><code>${escapeHtml(id)}</code></li>`).join("")}</ul>`
-      : `<ul class="ooo-list"><li><em>None — out of office is disabled or webhooks were cleared.</em></li></ul>`;
-
-  const toggleChecked = profile.enableOoo ? " checked" : "";
+  const welcomeName = profile.displayName || profile.email || profile.personId;
+  const enableOooChecked = profile.enableOoo ? " checked" : "";
+  const sendColleaguesChecked = profile.sendOooToColleagues ? " checked" : "";
+  const sameMessageChecked = profile.useSameColleagueMessage ? " checked" : "";
+  const colleagueOptionsHidden = profile.sendOooToColleagues ? "" : " hidden";
+  const internalMessageHidden =
+    profile.sendOooToColleagues && !profile.useSameColleagueMessage ? "" : " hidden";
+  const internalMessage = profile.internalOooMessage || profile.oooMessage;
 
   return renderPage({
     title: "Settings — Webex Out of Office",
+    scripts: settingsFormScriptTag(),
     content: `
       <mdc-card variant="border">
         <mdc-text slot="title" type="heading-midsize-bold">Out of office settings</mdc-text>
         <div slot="body">
+          <div class="ooo-debug" data-debug="user">
+            <span data-debug="email">${escapeHtml(profile.email)}</span>
+            <span data-debug="person-id">${escapeHtml(profile.personId)}</span>
+          </div>
+          <div class="ooo-debug" data-debug="webhooks">
+            <span data-debug="webhook-target">${webhookHint}</span>
+            <span data-debug="webhook-ids">${escapeHtml(profile.webhookIds.join(", "))}</span>
+          </div>
           ${bannerWithText("informational", [
             {
               type: "body-midsize-bold",
-              html: `Signed in as ${escapeHtml(profile.email || profile.personId)}`,
-            },
-            {
-              type: "body-midsize-regular",
-              html: `Webex person ID: ${escapeHtml(profile.personId)}`,
+              html: `Welcome ${escapeHtml(welcomeName)}`,
             },
           ])}
-          <form method="post" action="/settings" class="ooo-form">
-            <mdc-toggle name="enableOoo" label="Out of office" value="1"${toggleChecked}></mdc-toggle>
+          <form method="post" action="/settings" class="ooo-form ooo-settings-form">
+            <mdc-toggle name="enableOoo" label="Out of office" value="1"${enableOooChecked}></mdc-toggle>
             <mdc-textarea
               name="oooMessage"
               label="Out of office message"
               value="${escapeHtml(profile.oooMessage)}"
               rows="5"
             ></mdc-textarea>
+            <mdc-toggle
+              name="sendOooToColleagues"
+              label="Send out of office message to colleagues"
+              value="1"${sendColleaguesChecked}
+            ></mdc-toggle>
+            <div class="ooo-colleague-options"${colleagueOptionsHidden}>
+              <mdc-toggle
+                name="useSameColleagueMessage"
+                label="Use same out of office message for internal and external users"
+                value="1"${sameMessageChecked}
+              ></mdc-toggle>
+              <div class="ooo-internal-message"${internalMessageHidden}>
+                <mdc-textarea
+                  name="internalOooMessage"
+                  label="Out of office message for colleagues"
+                  value="${escapeHtml(internalMessage)}"
+                  rows="5"
+                ></mdc-textarea>
+              </div>
+            </div>
             ${submitButton("Save settings", "primary")}
           </form>
-        </div>
-      </mdc-card>
-      <mdc-card variant="border" class="ooo-card-spaced">
-        <mdc-text slot="title" type="heading-small-bold">Registered webhooks</mdc-text>
-        <div slot="body">
-          <mdc-text type="body-small-regular">Target URL: <code>${webhookHint}</code></mdc-text>
-          ${webhookList}
           <div class="ooo-actions">
             ${authLink("Re-authenticate with Webex", "secondary")}
             <form method="post" action="/logout">

@@ -20,10 +20,11 @@ import {
 } from "./session.js";
 import { dashboardPage, errorPage, escapeHtml, landingPage } from "./ui.js";
 import { ensureAccessToken } from "./user-tokens.js";
-import { exchangeAuthorizationCode, getMe } from "./webex.js";
+import { exchangeAuthorizationCode, getMe, getPersonDetails } from "./webex.js";
 import { mountWebhookRoutes } from "./webhook-handler.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const appAssetsDir = path.join(__dirname, "assets");
 const momentumTokensDir = path.join(__dirname, "../node_modules/@momentum-design/tokens/dist/css");
 const momentumFontsDir = path.join(__dirname, "../node_modules/@momentum-design/fonts/dist");
 const momentumComponentsDir = path.join(__dirname, "../node_modules/@momentum-design/components/dist");
@@ -31,6 +32,12 @@ const momentumComponentsDir = path.join(__dirname, "../node_modules/@momentum-de
 const log = pino({ level: config.logLevel });
 const app = express();
 const DEFAULT_OOO_MESSAGE = "I'm currently out of office and will reply when I am back.";
+
+/** @param {Record<string, unknown> | undefined} body @param {string} name */
+function parseToggle(body, name) {
+  const value = body?.[name];
+  return value === "1" || value === "on" || value === "isActive";
+}
 
 app.use(
   helmet({
@@ -42,6 +49,7 @@ app.use(
     },
   })
 );
+app.use("/assets/app", express.static(appAssetsDir));
 app.use("/assets/momentum/tokens", express.static(momentumTokensDir));
 app.use("/assets/momentum/fonts", express.static(momentumFontsDir));
 app.use("/assets/momentum/components", express.static(momentumComponentsDir));
@@ -105,7 +113,12 @@ app.get("/webex/callback", async (req, res) => {
     const accessToken = tokens.access_token;
     const me = await getMe(accessToken);
     const personId = String(me.id);
-    const email = String(me.emails?.[0] ?? me.email ?? "");
+    const person = await getPersonDetails(accessToken, personId);
+    const email = String(person.emails?.[0] ?? person.email ?? me.emails?.[0] ?? me.email ?? "");
+    const displayName =
+      typeof person.displayName === "string" && person.displayName.trim()
+        ? person.displayName.trim()
+        : email.split("@")[0] || personId;
     const previous = getUserByPersonId(personId);
 
     const enableOoo = previous?.enableOoo ?? false;
@@ -117,11 +130,15 @@ app.get("/webex/callback", async (req, res) => {
     upsertUser({
       personId,
       email,
+      displayName,
       accessToken,
       refreshToken: String(tokens.refresh_token ?? previous?.refreshToken ?? ""),
       accessTokenExpiresAt,
       enableOoo,
       oooMessage: normalizedMessage,
+      sendOooToColleagues: previous?.sendOooToColleagues ?? false,
+      useSameColleagueMessage: previous?.useSameColleagueMessage ?? true,
+      internalOooMessage: previous?.internalOooMessage ?? normalizedMessage,
       webhookIds,
     });
 
@@ -143,20 +160,30 @@ app.post("/settings", async (req, res) => {
     return res.status(401).type("html").send(errorPage("You must sign in to update settings."));
   }
 
-  const enableOoo =
-    req.body?.enableOoo === "1" ||
-    req.body?.enableOoo === "on" ||
-    req.body?.enableOoo === "isActive";
+  const enableOoo = parseToggle(req.body, "enableOoo");
   const oooMessage =
     typeof req.body?.oooMessage === "string" && req.body.oooMessage.trim()
       ? req.body.oooMessage.trim()
       : DEFAULT_OOO_MESSAGE;
+  const sendOooToColleagues = parseToggle(req.body, "sendOooToColleagues");
 
   try {
     const user = getUserByPersonId(req.session.personId);
     if (!user) {
       clearSessionCookie(res);
       return res.status(401).type("html").send(errorPage("Session expired — please sign in again."));
+    }
+
+    let useSameColleagueMessage = user.useSameColleagueMessage;
+    let internalOooMessage = user.internalOooMessage;
+    if (sendOooToColleagues) {
+      useSameColleagueMessage = parseToggle(req.body, "useSameColleagueMessage");
+      if (!useSameColleagueMessage) {
+        internalOooMessage =
+          typeof req.body?.internalOooMessage === "string" && req.body.internalOooMessage.trim()
+            ? req.body.internalOooMessage.trim()
+            : user.internalOooMessage.trim() || oooMessage;
+      }
     }
 
     const accessToken = await ensureAccessToken(user);
@@ -166,10 +193,16 @@ app.post("/settings", async (req, res) => {
       ...user,
       enableOoo,
       oooMessage,
+      sendOooToColleagues,
+      useSameColleagueMessage,
+      internalOooMessage,
       webhookIds,
     });
 
-    log.info({ personId: user.personId, enableOoo, webhookIds }, "updated user settings");
+    log.info(
+      { personId: user.personId, enableOoo, sendOooToColleagues, useSameColleagueMessage, webhookIds },
+      "updated user settings"
+    );
     res.redirect(302, "/");
   } catch (e) {
     log.error(e, "settings update failed");

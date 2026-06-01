@@ -9,11 +9,15 @@ const dbFile = path.isAbsolute(config.dbPath) ? config.dbPath : path.join(proces
 /** @typedef {{
  *   personId: string,
  *   email: string,
+ *   displayName: string,
  *   accessToken: string,
  *   refreshToken: string,
  *   accessTokenExpiresAt: number,
  *   enableOoo: boolean,
  *   oooMessage: string,
+ *   sendOooToColleagues: boolean,
+ *   useSameColleagueMessage: boolean,
+ *   internalOooMessage: string,
  *   webhookIds: string[],
  *   createdAt: number,
  *   updatedAt: number,
@@ -22,8 +26,12 @@ const dbFile = path.isAbsolute(config.dbPath) ? config.dbPath : path.join(proces
 /** @typedef {{
  *   personId: string,
  *   email: string,
+ *   displayName: string,
  *   enableOoo: boolean,
  *   oooMessage: string,
+ *   sendOooToColleagues: boolean,
+ *   useSameColleagueMessage: boolean,
+ *   internalOooMessage: string,
  *   webhookIds: string[],
  *   createdAt: number,
  *   updatedAt: number,
@@ -62,7 +70,23 @@ function ensureDb() {
     CREATE INDEX IF NOT EXISTS idx_sessions_person ON sessions(person_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
   `);
+  migrateUsersTable(db);
   return db;
+}
+
+/** @param {DatabaseSync} conn */
+function migrateUsersTable(conn) {
+  const addColumn = (sql) => {
+    try {
+      conn.exec(sql);
+    } catch {
+      // Column already exists.
+    }
+  };
+  addColumn("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''");
+  addColumn("ALTER TABLE users ADD COLUMN send_ooo_to_colleagues INTEGER NOT NULL DEFAULT 0");
+  addColumn("ALTER TABLE users ADD COLUMN use_same_colleague_message INTEGER NOT NULL DEFAULT 1");
+  addColumn("ALTER TABLE users ADD COLUMN internal_ooo_message TEXT NOT NULL DEFAULT ''");
 }
 
 /**
@@ -80,11 +104,15 @@ function rowToUser(row) {
   return {
     personId: String(row.person_id),
     email: String(row.email),
+    displayName: String(row.display_name ?? ""),
     accessToken: decryptToken(String(row.access_token_enc)),
     refreshToken: decryptToken(String(row.refresh_token_enc)),
     accessTokenExpiresAt: Number(row.access_token_expires_at),
     enableOoo: Boolean(row.enable_ooo),
     oooMessage: String(row.ooo_message),
+    sendOooToColleagues: Boolean(row.send_ooo_to_colleagues),
+    useSameColleagueMessage: row.use_same_colleague_message === undefined ? true : Boolean(row.use_same_colleague_message),
+    internalOooMessage: String(row.internal_ooo_message ?? ""),
     webhookIds,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -99,8 +127,12 @@ export function toUserProfile(user) {
   return {
     personId: user.personId,
     email: user.email,
+    displayName: user.displayName,
     enableOoo: user.enableOoo,
     oooMessage: user.oooMessage,
+    sendOooToColleagues: user.sendOooToColleagues,
+    useSameColleagueMessage: user.useSameColleagueMessage,
+    internalOooMessage: user.internalOooMessage,
     webhookIds: user.webhookIds,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -120,27 +152,36 @@ export function upsertUser(user) {
   conn
     .prepare(
       `INSERT INTO users (
-        person_id, email, access_token_enc, refresh_token_enc, access_token_expires_at,
-        enable_ooo, ooo_message, webhook_ids_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        person_id, email, display_name, access_token_enc, refresh_token_enc, access_token_expires_at,
+        enable_ooo, ooo_message, send_ooo_to_colleagues, use_same_colleague_message, internal_ooo_message,
+        webhook_ids_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(person_id) DO UPDATE SET
         email = excluded.email,
+        display_name = excluded.display_name,
         access_token_enc = excluded.access_token_enc,
         refresh_token_enc = excluded.refresh_token_enc,
         access_token_expires_at = excluded.access_token_expires_at,
         enable_ooo = excluded.enable_ooo,
         ooo_message = excluded.ooo_message,
+        send_ooo_to_colleagues = excluded.send_ooo_to_colleagues,
+        use_same_colleague_message = excluded.use_same_colleague_message,
+        internal_ooo_message = excluded.internal_ooo_message,
         webhook_ids_json = excluded.webhook_ids_json,
         updated_at = excluded.updated_at`
     )
     .run(
       user.personId,
       user.email,
+      user.displayName ?? "",
       encryptToken(user.accessToken),
       encryptToken(user.refreshToken),
       user.accessTokenExpiresAt,
       user.enableOoo ? 1 : 0,
       user.oooMessage,
+      user.sendOooToColleagues ? 1 : 0,
+      user.useSameColleagueMessage !== false ? 1 : 0,
+      user.internalOooMessage ?? "",
       JSON.stringify(user.webhookIds ?? []),
       createdAt,
       updatedAt

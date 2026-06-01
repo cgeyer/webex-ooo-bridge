@@ -58,6 +58,21 @@ export async function getMe(accessToken) {
 }
 
 /**
+ * Get Person Details — https://developer.webex.com/messaging/docs/api/v1/people/get-person-details
+ * @param {string} accessToken
+ * @param {string} personId
+ */
+export async function getPersonDetails(accessToken, personId) {
+  const res = await fetch(`${config.webex.apiBase}/people/${encodeURIComponent(personId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`Get person details failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json();
+}
+
+/**
  * @param {string} accessToken
  * @param {{ name: string, filter: string, secret?: string }} options
  */

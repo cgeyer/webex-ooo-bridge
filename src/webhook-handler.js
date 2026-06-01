@@ -2,8 +2,9 @@ import crypto from "node:crypto";
 import express from "express";
 import { config } from "./config.js";
 import { getUserByWebhookId } from "./db.js";
+import { resolveOooReplyText } from "./ooo-message.js";
 import { ensureAccessToken } from "./user-tokens.js";
-import { getMessage, sendRoomMessage } from "./webex.js";
+import { getMessage, getPersonDetails, sendRoomMessage } from "./webex.js";
 
 /** Path segment for incoming Webex message webhooks (full URL = WEBEX_WEBHOOK_TARGET_URL). */
 export const WEBHOOK_MESSAGES_PATH = "/webhooks/messages";
@@ -35,7 +36,7 @@ export function mountWebhookRoutes(app, log) {
       if (typeof webhookId !== "string" || typeof messageId !== "string") return;
 
       const user = getUserByWebhookId(webhookId);
-      if (!user || !user.enableOoo || !user.oooMessage?.trim()) return;
+      if (!user || !user.enableOoo) return;
 
       const accessToken = await ensureAccessToken(user);
       const filter = String(req.body?.filter ?? "");
@@ -52,20 +53,37 @@ export function mountWebhookRoutes(app, log) {
           messageParentId = msg.parentId;
         }
       }
-      if (!roomId) return;
+      if (!roomId || !senderPersonId) return;
       if (senderPersonId === user.personId) return;
 
+      const sender = await getPersonDetails(accessToken, String(senderPersonId));
+      const senderEmail = String(sender.emails?.[0] ?? sender.email ?? "");
+      const replyText = resolveOooReplyText(user, senderEmail);
+      if (!replyText) return;
+
       if (isDirectWebhook) {
-        await sendRoomMessage(accessToken, { roomId, text: user.oooMessage.trim() });
-        log.info({ webhookId, roomId, mode: "direct" }, "sent OOO direct reply");
+        await sendRoomMessage(accessToken, { roomId, text: replyText });
+        log.info(
+          { webhookId, roomId, mode: "direct", senderDomain: senderEmail.split("@")[1] ?? null },
+          "sent OOO direct reply"
+        );
       } else {
         const replyParentId = typeof messageParentId === "string" ? messageParentId : messageId;
         await sendRoomMessage(accessToken, {
           roomId,
           parentId: replyParentId,
-          text: user.oooMessage.trim(),
+          text: replyText,
         });
-        log.info({ webhookId, roomId, mode: "group", parentId: replyParentId }, "sent OOO threaded reply");
+        log.info(
+          {
+            webhookId,
+            roomId,
+            mode: "group",
+            parentId: replyParentId,
+            senderDomain: senderEmail.split("@")[1] ?? null,
+          },
+          "sent OOO threaded reply"
+        );
       }
     } catch (err) {
       next(err);
