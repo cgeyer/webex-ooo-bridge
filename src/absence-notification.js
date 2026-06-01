@@ -3,13 +3,14 @@ import { getRoomDetails, sendBotDirectMessage } from "./webex.js";
 
 /**
  * @param {{ markdown?: string, text?: string }} message
+ * @returns {string}
  */
 export function incomingMessageContent(message) {
   if (typeof message.markdown === "string" && message.markdown.trim()) {
-    return { kind: "markdown", body: message.markdown.trim() };
+    return message.markdown.trim();
   }
   const text = typeof message.text === "string" ? message.text.trim() : "";
-  return { kind: "text", body: text || "(no text)" };
+  return text || "(no text)";
 }
 
 /**
@@ -17,7 +18,7 @@ export function incomingMessageContent(message) {
  *   senderName: string,
  *   isDirect: boolean,
  *   roomTitle: string | null,
- *   incoming: ReturnType<typeof incomingMessageContent>,
+ *   incomingBody: string,
  * }} input
  */
 export function formatAbsenceNotification(input) {
@@ -35,11 +36,7 @@ export function formatAbsenceNotification(input) {
     "",
   ].join("\n");
 
-  if (input.incoming.kind === "markdown") {
-    return { markdown: `${header}${input.incoming.body}` };
-  }
-
-  return { text: `${header}${input.incoming.body}` };
+  return { markdown: `${header}${input.incomingBody}` };
 }
 
 /**
@@ -78,17 +75,17 @@ export async function notifyUserAboutIncomingMessage(user, ctx) {
     roomTitle = typeof room.title === "string" ? room.title : null;
   }
 
-  const incoming = incomingMessageContent(ctx.incomingMessage);
+  const incomingBody = incomingMessageContent(ctx.incomingMessage);
   const notification = formatAbsenceNotification({
     senderName,
     isDirect: ctx.isDirect,
     roomTitle,
-    incoming,
+    incomingBody,
   });
 
   await sendBotDirectMessage({
     toPersonEmail: user.email,
-    ...notification,
+    markdown: notification.markdown,
   });
 
   ctx.log.info(
