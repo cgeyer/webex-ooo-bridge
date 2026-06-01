@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import cookieParser from "cookie-parser";
 import { config } from "./config.js";
-import { deleteSession, getSession, getUserByPersonId, toUserProfile } from "./db.js";
+import { deleteSession, getSession, getUserByPersonId, toUserProfile, upsertUser } from "./db.js";
+import { ensureOooEndNotExpired } from "./ooo-end-settings.js";
 
 export const SESSION_COOKIE = "sid";
 const SESSION_MAX_AGE_SEC = 7 * 24 * 60 * 60;
@@ -32,11 +33,16 @@ export function loadSession(req, _res, next) {
     return next();
   }
 
-  const user = getUserByPersonId(record.personId);
-  if (!user) {
+  const storedUser = getUserByPersonId(record.personId);
+  if (!storedUser) {
     deleteSession(sid);
     req.session = null;
     return next();
+  }
+
+  const user = ensureOooEndNotExpired(storedUser);
+  if (user.hasOooEndDate !== storedUser.hasOooEndDate) {
+    upsertUser(user);
   }
 
   /** @type {AppSession} */

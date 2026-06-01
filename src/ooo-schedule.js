@@ -72,3 +72,13 @@ export function isOooActive(user, nowMs = Date.now()) {
   if (endMs === null) return true;
   return nowMs < endMs;
 }
+
+/**
+ * @param {import("./db.js").UserRecord | import("./db.js").UserProfile} user
+ * @param {number} [nowMs]
+ */
+export function isOooEndExpired(user, nowMs = Date.now()) {
+  if (!user.hasOooEndDate) return false;
+  const endMs = oooEndTimestampMs(user);
+  return endMs !== null && endMs <= nowMs;
+}

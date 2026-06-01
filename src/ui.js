@@ -1,4 +1,5 @@
 /** Momentum Design assets served from node_modules via Express. */
+import { OOO_END_MUST_BE_FUTURE_ERROR } from "./ooo-end-settings.js";
 import { listTimeZones } from "./timezones.js";
 import { normalizeTime24 } from "./time-format.js";
 
@@ -7,6 +8,7 @@ export const MDS = {
   fontsCss: "/assets/momentum/fonts/css/fonts.css",
   fontWoff2: "/assets/momentum/fonts/inter/Inter.var.woff2",
   componentsJs: "/assets/momentum/components/browser/index.js",
+  oooEndClientJs: "/assets/app/ooo-end-client.js",
   settingsFormJs: "/assets/app/settings-form.js",
   // Typography tokens (--mds-font-family-primary, etc.) live on .mds-typography, not the theme class.
   themeClass: "mds-theme-stable-lightWebex mds-typography",
@@ -173,11 +175,24 @@ function layoutStyles() {
     }
     .ooo-colleague-options[hidden],
     .ooo-internal-message[hidden],
-    .ooo-end-options[hidden] { display: none; }
+    .ooo-end-section[hidden],
+    .ooo-end-options[hidden],
+    .ooo-end-date-error[hidden] { display: none; }
+    .ooo-end-section {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
     .ooo-end-fields {
       display: grid;
       grid-template-columns: repeat(2, minmax(12rem, 1fr));
       gap: 1.25rem;
+    }
+    .ooo-end-date-error {
+      margin: 0;
+      font-size: 0.875rem;
+      line-height: 1.25rem;
+      color: var(--mds-color-theme-text-error-normal, #a12823);
     }
     .ooo-end-fields mdc-datepicker,
     .ooo-end-fields mdc-timepicker,
@@ -242,7 +257,7 @@ function layoutStyles() {
 }
 
 function settingsFormScriptTag() {
-  return `<script src="${MDS.settingsFormJs}"></script>`;
+  return `<script src="${MDS.oooEndClientJs}"></script><script src="${MDS.settingsFormJs}"></script>`;
 }
 
 /** @param {string} selectedTimeZone */
@@ -284,6 +299,7 @@ export function dashboardPage(profile, webhookHint) {
   const sameMessageChecked = profile.useSameColleagueMessage ? " checked" : "";
   const notifyIncomingChecked = profile.notifyIncomingMessages ? " checked" : "";
   const hasOooEndDateChecked = profile.hasOooEndDate ? " checked" : "";
+  const endSectionHidden = profile.enableOoo ? "" : " hidden";
   const endOptionsHidden = profile.hasOooEndDate ? "" : " hidden";
   const endDateValue = profile.oooEndDate || "";
   const endTimeValue = normalizeTime24(profile.oooEndTime || "") || "";
@@ -314,7 +330,7 @@ export function dashboardPage(profile, webhookHint) {
               html: `Welcome ${escapeHtml(welcomeName)}`,
             },
           ])}
-          <form method="post" action="/settings" class="ooo-form ooo-settings-form">
+          <form method="post" action="/settings" class="ooo-form ooo-settings-form" data-ooo-end-future-error="${escapeHtml(OOO_END_MUST_BE_FUTURE_ERROR)}">
             <mdc-toggle name="enableOoo" label="Out of office" value="1"${enableOooChecked}></mdc-toggle>
             <mdc-textarea
               name="oooMessage"
@@ -322,45 +338,48 @@ export function dashboardPage(profile, webhookHint) {
               value="${escapeHtml(profile.oooMessage)}"
               rows="5"
             ></mdc-textarea>
-            <mdc-toggle
-              name="hasOooEndDate"
-              label="Out of office has an end date"
-              value="1"${hasOooEndDateChecked}
-            ></mdc-toggle>
-            <div class="ooo-end-options"${endOptionsHidden}>
-              <div class="ooo-end-fields">
-                <mdc-datepicker
-                  name="oooEndDate"
-                  label="End date"
-                  variant="input"
-                  value="${escapeHtml(endDateValue)}"
-                  locale-month-label="Month"
-                  locale-day-label="Day"
-                  locale-year-label="Year"
-                  locale-calendar-label="Open calendar"
-                  locale-spinbutton-description="Use arrow keys to adjust"
-                  locale-today-label="Today"
-                  locale-prev-month-label="Previous month"
-                  locale-next-month-label="Next month"
-                ></mdc-datepicker>
-                <mdc-timepicker
-                  name="oooEndTime"
-                  label="End time"
-                  time-format="24h"
-                  value="${escapeHtml(endTimeValue)}"
-                  locale-hours-label="Hours"
-                  locale-minutes-label="Minutes"
-                  locale-hours-placeholder="HH"
-                  locale-minutes-placeholder="MM"
-                  locale-show-time-picker-label="Show time picker"
-                  locale-time-options-label="Time options"
-                  locale-spinbutton-description="Use arrow keys to adjust"
-                ></mdc-timepicker>
-                <div class="ooo-timezone-field">
-                  <label class="ooo-field-label" for="oooEndTimezone">Time zone</label>
-                  <select id="oooEndTimezone" class="ooo-timezone-select" name="oooEndTimezone">
-                    ${timezoneSelectOptions(endTimezoneValue)}
-                  </select>
+            <div class="ooo-end-section"${endSectionHidden}>
+              <mdc-toggle
+                name="hasOooEndDate"
+                label="Out of office has an end date"
+                value="1"${hasOooEndDateChecked}
+              ></mdc-toggle>
+              <div class="ooo-end-options"${endOptionsHidden}>
+                <p class="ooo-end-date-error" role="alert" hidden></p>
+                <div class="ooo-end-fields">
+                  <mdc-datepicker
+                    name="oooEndDate"
+                    label="End date"
+                    variant="input"
+                    value="${escapeHtml(endDateValue)}"
+                    locale-month-label="Month"
+                    locale-day-label="Day"
+                    locale-year-label="Year"
+                    locale-calendar-label="Open calendar"
+                    locale-spinbutton-description="Use arrow keys to adjust"
+                    locale-today-label="Today"
+                    locale-prev-month-label="Previous month"
+                    locale-next-month-label="Next month"
+                  ></mdc-datepicker>
+                  <mdc-timepicker
+                    name="oooEndTime"
+                    label="End time"
+                    time-format="24h"
+                    value="${escapeHtml(endTimeValue)}"
+                    locale-hours-label="Hours"
+                    locale-minutes-label="Minutes"
+                    locale-hours-placeholder="HH"
+                    locale-minutes-placeholder="MM"
+                    locale-show-time-picker-label="Show time picker"
+                    locale-time-options-label="Time options"
+                    locale-spinbutton-description="Use arrow keys to adjust"
+                  ></mdc-timepicker>
+                  <div class="ooo-timezone-field">
+                    <label class="ooo-field-label" for="oooEndTimezone">Time zone</label>
+                    <select id="oooEndTimezone" class="ooo-timezone-select" name="oooEndTimezone">
+                      ${timezoneSelectOptions(endTimezoneValue)}
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>
