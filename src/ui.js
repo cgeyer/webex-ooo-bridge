@@ -17,6 +17,14 @@ export function escapeHtml(s) {
  * @param {string} variant
  * @param {Array<{ type: string, html: string }>} lines
  */
+function authLink(label, variant = "primary") {
+  return `<a href="/auth/webex" class="ooo-button ooo-button-${variant}">${escapeHtml(label)}</a>`;
+}
+
+function submitButton(label, variant = "primary") {
+  return `<button type="submit" class="ooo-button ooo-button-${variant}">${escapeHtml(label)}</button>`;
+}
+
 function bannerWithText(variant, lines) {
   const textLines = lines
     .map(({ type, html }) => `              <mdc-text type="${type}" tagname="p">${html}</mdc-text>`)
@@ -118,6 +126,28 @@ function layoutStyles() {
       background: var(--mds-color-theme-background-solid-primary-normal);
     }
     .ooo-form { display: flex; flex-direction: column; gap: 1.25rem; margin-top: 1.25rem; }
+    .ooo-button {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 2rem; padding: 0 1rem; border-radius: 9999px;
+      border: 1px solid transparent; font: inherit; font-size: 0.875rem;
+      font-weight: 500; line-height: 1.25rem; text-decoration: none;
+      cursor: pointer; box-sizing: border-box;
+    }
+    .ooo-button-primary {
+      background: var(--mds-color-theme-button-accent-normal);
+      color: var(--mds-color-theme-common-text-primary-normal);
+    }
+    .ooo-button-primary:hover {
+      background: var(--mds-color-theme-button-accent-hover);
+    }
+    .ooo-button-secondary {
+      background: transparent;
+      border-color: var(--mds-color-theme-outline-primary-normal);
+      color: var(--mds-color-theme-text-primary-normal);
+    }
+    .ooo-button-secondary:hover {
+      background: var(--mds-color-theme-background-secondary-subtle);
+    }
     .ooo-card-spaced { margin-top: 1rem; display: block; }
     .ooo-actions { display: flex; flex-wrap: wrap; gap: 0.625rem; margin-top: 1.25rem; }
     .ooo-list { margin: 0.75rem 0 0; padding-left: 1.25rem; }
@@ -143,9 +173,7 @@ export function landingPage() {
             Automatically reply in Webex direct messages and when you are @mentioned in spaces.
             Sign in to configure your message and turn replies on or off.
           </mdc-text>
-          <form method="post" action="/auth/webex" class="ooo-form">
-            <mdc-button type="submit" variant="primary" color="accent" size="32">Sign in with Webex</mdc-button>
-          </form>
+          <div class="ooo-form">${authLink("Sign in with Webex")}</div>
         </div>
       </mdc-card>`,
   });
@@ -187,7 +215,7 @@ export function dashboardPage(profile, webhookHint) {
               value="${escapeHtml(profile.oooMessage)}"
               rows="5"
             ></mdc-textarea>
-            <mdc-button type="submit" variant="primary" color="accent" size="32">Save settings</mdc-button>
+            ${submitButton("Save settings", "primary")}
           </form>
         </div>
       </mdc-card>
@@ -197,11 +225,9 @@ export function dashboardPage(profile, webhookHint) {
           <mdc-text type="body-small-regular">Target URL: <code>${webhookHint}</code></mdc-text>
           ${webhookList}
           <div class="ooo-actions">
-            <form method="post" action="/auth/webex">
-              <mdc-button type="submit" variant="secondary" size="32">Re-authenticate with Webex</mdc-button>
-            </form>
+            ${authLink("Re-authenticate with Webex", "secondary")}
             <form method="post" action="/logout">
-              <mdc-button type="submit" variant="secondary" size="32">Sign out</mdc-button>
+              ${submitButton("Sign out", "secondary")}
             </form>
           </div>
         </div>

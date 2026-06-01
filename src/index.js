@@ -32,7 +32,16 @@ const log = pino({ level: config.logLevel });
 const app = express();
 const DEFAULT_OOO_MESSAGE = "I'm currently out of office and will reply when I am back.";
 
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        // upgrade-insecure-requests breaks form POST on plain HTTP (form-action 'self' mismatch).
+        ...(config.secureCookies ? {} : { "upgrade-insecure-requests": null }),
+      },
+    },
+  })
+);
 app.use("/assets/momentum/tokens", express.static(momentumTokensDir));
 app.use("/assets/momentum/fonts", express.static(momentumFontsDir));
 app.use("/assets/momentum/components", express.static(momentumComponentsDir));
@@ -56,7 +65,7 @@ app.get("/", (req, res) => {
   res.type("html").send(landingPage());
 });
 
-app.post("/auth/webex", (_req, res) => {
+function startWebexAuth(_req, res) {
   const verifier = generateCodeVerifier(64);
   const challenge = codeChallengeS256(verifier);
   const state = savePkceState(verifier);
@@ -69,7 +78,10 @@ app.post("/auth/webex", (_req, res) => {
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
   res.redirect(302, url.toString());
-});
+}
+
+app.get("/auth/webex", startWebexAuth);
+app.post("/auth/webex", startWebexAuth);
 
 app.get("/webex/callback", async (req, res) => {
   const err = req.query.error;
