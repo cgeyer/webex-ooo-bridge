@@ -29,14 +29,24 @@
     internalMessage.hidden = !sendOn || toggleOn(sameMessage);
   }
 
-  function updateEndSection() {
+  function setFieldEnabled(field, enabled) {
+    if (!field) return;
+    if (enabled) {
+      field.removeAttribute("disabled");
+    } else {
+      field.setAttribute("disabled", "");
+    }
+  }
+
+  function updateOooEnabledState() {
     const form = document.querySelector(".ooo-settings-form");
     if (!form) return;
     const enableOoo = form.querySelector('mdc-toggle[name="enableOoo"]');
-    const endSection = form.querySelector(".ooo-end-section");
-    if (!endSection) return;
+    const advanced = form.querySelector(".ooo-advanced-settings");
+    const message = form.querySelector('mdc-textarea[name="oooMessage"]');
     const oooOn = toggleOn(enableOoo);
-    endSection.hidden = !oooOn;
+    if (advanced) advanced.hidden = !oooOn;
+    setFieldEnabled(message, oooOn);
     if (!oooOn) {
       clearEndDateError(form);
     }
@@ -186,13 +196,13 @@
     });
 
     const enableOooToggle = form.querySelector('mdc-toggle[name="enableOoo"]');
-    enableOooToggle?.addEventListener("change", updateEndSection);
+    enableOooToggle?.addEventListener("change", updateOooEnabledState);
 
     const endDateToggle = form.querySelector('mdc-toggle[name="hasOooEndDate"]');
     endDateToggle?.addEventListener("change", updateEndDateFields);
 
+    updateOooEnabledState();
     updateColleagueFields();
-    updateEndSection();
     updateEndDateFields();
     bindEndDatePicker();
     bindEndTimePicker();

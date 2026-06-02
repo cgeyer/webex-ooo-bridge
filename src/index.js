@@ -169,12 +169,6 @@ app.post("/settings", async (req, res) => {
   }
 
   const enableOoo = parseToggle(req.body, "enableOoo");
-  const oooMessage =
-    typeof req.body?.oooMessage === "string" && req.body.oooMessage.trim()
-      ? req.body.oooMessage.trim()
-      : DEFAULT_OOO_MESSAGE;
-  const sendOooToColleagues = parseToggle(req.body, "sendOooToColleagues");
-  const notifyIncomingMessages = parseToggle(req.body, "notifyIncomingMessages");
 
   try {
     const user = getUserByPersonId(req.session.personId);
@@ -183,9 +177,21 @@ app.post("/settings", async (req, res) => {
       return res.status(401).type("html").send(errorPage("Session expired — please sign in again."));
     }
 
+    const oooMessage = enableOoo
+      ? typeof req.body?.oooMessage === "string" && req.body.oooMessage.trim()
+        ? req.body.oooMessage.trim()
+        : user.oooMessage.trim() || DEFAULT_OOO_MESSAGE
+      : user.oooMessage.trim() || DEFAULT_OOO_MESSAGE;
+    const sendOooToColleagues = enableOoo
+      ? parseToggle(req.body, "sendOooToColleagues")
+      : user.sendOooToColleagues;
+    const notifyIncomingMessages = enableOoo
+      ? parseToggle(req.body, "notifyIncomingMessages")
+      : user.notifyIncomingMessages;
+
     let useSameColleagueMessage = user.useSameColleagueMessage;
     let internalOooMessage = user.internalOooMessage;
-    if (sendOooToColleagues) {
+    if (enableOoo && sendOooToColleagues) {
       useSameColleagueMessage = parseToggle(req.body, "useSameColleagueMessage");
       if (!useSameColleagueMessage) {
         internalOooMessage =

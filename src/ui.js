@@ -153,6 +153,22 @@ function layoutStyles() {
       line-height: inherit;
     }
     .ooo-form { display: flex; flex-direction: column; gap: 1.25rem; margin-top: 1.25rem; }
+    .ooo-advanced-settings {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .ooo-advanced-settings[hidden] { display: none; }
+    .ooo-settings-card {
+      --mdc-card-width: 100%;
+      width: 100%;
+      max-width: 100%;
+    }
+    .ooo-card-body {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
     .ooo-button {
       display: inline-flex; align-items: center; justify-content: center;
       min-height: 2rem; padding: 0 1rem; border-radius: 9999px;
@@ -182,14 +198,8 @@ function layoutStyles() {
     }
     .ooo-colleague-options[hidden],
     .ooo-internal-message[hidden],
-    .ooo-end-section[hidden],
     .ooo-end-options[hidden],
     .ooo-end-date-error[hidden] { display: none; }
-    .ooo-end-section {
-      display: flex;
-      flex-direction: column;
-      gap: 1.25rem;
-    }
     .ooo-end-fields {
       display: grid;
       grid-template-columns: repeat(2, minmax(12rem, 1fr));
@@ -267,6 +277,15 @@ function settingsFormScriptTag() {
   return `<script src="${MDS.oooEndClientJs}"></script><script src="${MDS.settingsFormJs}"></script>`;
 }
 
+/** @param {string} title @param {string} bodyHtml */
+function settingsCard(title, bodyHtml) {
+  return `
+            <mdc-card variant="border" class="ooo-settings-card">
+              <mdc-text slot="title" type="heading-small-bold">${escapeHtml(title)}</mdc-text>
+              <div slot="body" class="ooo-card-body">${bodyHtml}</div>
+            </mdc-card>`;
+}
+
 /** @param {string} selectedTimeZone */
 function timezoneSelectOptions(selectedTimeZone) {
   const selected = selectedTimeZone || "UTC";
@@ -306,7 +325,8 @@ export function dashboardPage(profile, webhookHint) {
   const sameMessageChecked = profile.useSameColleagueMessage ? " checked" : "";
   const notifyIncomingChecked = profile.notifyIncomingMessages ? " checked" : "";
   const hasOooEndDateChecked = profile.hasOooEndDate ? " checked" : "";
-  const endSectionHidden = profile.enableOoo ? "" : " hidden";
+  const oooAdvancedHidden = profile.enableOoo ? "" : " hidden";
+  const oooMessageDisabled = profile.enableOoo ? "" : " disabled";
   const endOptionsHidden = profile.hasOooEndDate ? "" : " hidden";
   const endDateValue = profile.oooEndDate || "";
   const endTimeValue = normalizeTime24(profile.oooEndTime || "") || "";
@@ -338,14 +358,21 @@ export function dashboardPage(profile, webhookHint) {
             },
           ])}
           <form method="post" action="/settings" class="ooo-form ooo-settings-form" data-ooo-end-future-error="${escapeHtml(OOO_END_MUST_BE_FUTURE_ERROR)}">
-            <mdc-toggle name="enableOoo" label="Out of office" value="1"${enableOooChecked}></mdc-toggle>
-            <mdc-textarea
-              name="oooMessage"
-              label="Out of office message"
-              value="${escapeHtml(profile.oooMessage)}"
-              rows="5"
-            ></mdc-textarea>
-            <div class="ooo-end-section"${endSectionHidden}>
+            ${settingsCard(
+              "Out of office",
+              `
+              <mdc-toggle name="enableOoo" label="Enable out of office replies" value="1"${enableOooChecked}></mdc-toggle>
+              <mdc-textarea
+                name="oooMessage"
+                label="Out of office message"
+                value="${escapeHtml(profile.oooMessage)}"
+                rows="5"${oooMessageDisabled}
+              ></mdc-textarea>`
+            )}
+            <div class="ooo-advanced-settings"${oooAdvancedHidden}>
+              ${settingsCard(
+                "Schedule",
+                `
               <mdc-toggle
                 name="hasOooEndDate"
                 label="Out of office has an end date"
@@ -388,33 +415,42 @@ export function dashboardPage(profile, webhookHint) {
                     </select>
                   </div>
                 </div>
-              </div>
-            </div>
-            <mdc-toggle
-              name="sendOooToColleagues"
-              label="Send out of office message to colleagues"
-              value="1"${sendColleaguesChecked}
-            ></mdc-toggle>
-            <div class="ooo-colleague-options"${colleagueOptionsHidden}>
+              </div>`
+              )}
+              ${settingsCard(
+                "Colleague replies",
+                `
               <mdc-toggle
-                name="useSameColleagueMessage"
-                label="Use same out of office message for internal and external users"
-                value="1"${sameMessageChecked}
+                name="sendOooToColleagues"
+                label="Send out of office message to colleagues"
+                value="1"${sendColleaguesChecked}
               ></mdc-toggle>
-              <div class="ooo-internal-message"${internalMessageHidden}>
-                <mdc-textarea
-                  name="internalOooMessage"
-                  label="Out of office message for colleagues"
-                  value="${escapeHtml(internalMessage)}"
-                  rows="5"
-                ></mdc-textarea>
-              </div>
+              <div class="ooo-colleague-options"${colleagueOptionsHidden}>
+                <mdc-toggle
+                  name="useSameColleagueMessage"
+                  label="Use same out of office message for internal and external users"
+                  value="1"${sameMessageChecked}
+                ></mdc-toggle>
+                <div class="ooo-internal-message"${internalMessageHidden}>
+                  <mdc-textarea
+                    name="internalOooMessage"
+                    label="Out of office message for colleagues"
+                    value="${escapeHtml(internalMessage)}"
+                    rows="5"
+                  ></mdc-textarea>
+                </div>
+              </div>`
+              )}
+              ${settingsCard(
+                "During absence",
+                `
+              <mdc-toggle
+                name="notifyIncomingMessages"
+                label="Notify me about incoming messages during my absence"
+                value="1"${notifyIncomingChecked}
+              ></mdc-toggle>`
+              )}
             </div>
-            <mdc-toggle
-              name="notifyIncomingMessages"
-              label="Notify me about incoming messages during my absence"
-              value="1"${notifyIncomingChecked}
-            ></mdc-toggle>
             ${submitButton("Save settings", "primary")}
           </form>
           <div class="ooo-actions">
