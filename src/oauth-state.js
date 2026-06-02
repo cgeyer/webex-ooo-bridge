@@ -1,30 +1,33 @@
 import crypto from "node:crypto";
 
-/** @type {Map<string, { codeVerifier: string, created: number }>} */
+/** @typedef {{ codeVerifier: string, created: number, personId?: string, flow?: string }} PkceStateRecord */
+
+/** @type {Map<string, PkceStateRecord>} */
 const store = new Map();
 const TTL_MS = 15 * 60 * 1000;
 
 /**
  * @param {string} codeVerifier
+ * @param {{ personId?: string, flow?: string }} [meta]
  * @returns {string} state id
  */
-export function savePkceState(codeVerifier) {
+export function savePkceState(codeVerifier, meta = {}) {
   cleanup();
   const id = crypto.randomBytes(24).toString("base64url");
-  store.set(id, { codeVerifier, created: Date.now() });
+  store.set(id, { codeVerifier, created: Date.now(), ...meta });
   return id;
 }
 
 /**
  * @param {string} stateId
- * @returns {{ codeVerifier: string } | null}
+ * @returns {PkceStateRecord | null}
  */
 export function takePkceState(stateId) {
-  const v = store.get(stateId);
-  if (!v) return null;
+  const record = store.get(stateId);
+  if (!record) return null;
   store.delete(stateId);
-  if (Date.now() - v.created > TTL_MS) return null;
-  return { codeVerifier: v.codeVerifier };
+  if (Date.now() - record.created > TTL_MS) return null;
+  return record;
 }
 
 function cleanup() {

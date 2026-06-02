@@ -17,7 +17,7 @@
 
   function updateColleagueFields() {
     const form = document.querySelector(".ooo-settings-form");
-    if (!form) return;
+    if (!form || isExchangeSyncActive(form)) return;
     const sendColleagues = form.querySelector('mdc-toggle[name="sendOooToColleagues"]');
     const sameMessage = form.querySelector('mdc-toggle[name="useSameColleagueMessage"]');
     const colleagueOptions = form.querySelector(".ooo-colleague-options");
@@ -38,14 +38,58 @@
     }
   }
 
+  function isExchangeSyncActive(form) {
+    return form.dataset.exchangeEligible === "true" && form.dataset.exchangeSyncActive === "true";
+  }
+
+  function setExchangeManagedFields(form, enabled) {
+    const managed = form.querySelector(".ooo-exchange-managed");
+    if (!managed) return;
+    const fields = managed.querySelectorAll(
+      "mdc-toggle, mdc-textarea, mdc-datepicker, mdc-timepicker, select.ooo-timezone-select"
+    );
+    fields.forEach((field) => {
+      if (field.getAttribute("name") === "useExchangeOoo") return;
+      setFieldEnabled(field, enabled);
+    });
+  }
+
+  function updateExchangeSyncMode() {
+    const form = document.querySelector(".ooo-settings-form");
+    if (!form) return;
+    if (form.dataset.exchangeEligible !== "true") return;
+
+    const useExchange = toggleOn(form.querySelector('mdc-toggle[name="useExchangeOoo"]'));
+    form.dataset.exchangeSyncActive = useExchange ? "true" : "false";
+    setExchangeManagedFields(form, !useExchange);
+
+    if (!useExchange) {
+      updateOooEnabledState();
+      updateColleagueFields();
+      updateEndDateFields();
+    } else {
+      clearEndDateError(form);
+      const enableOoo = form.querySelector('mdc-toggle[name="enableOoo"]');
+      const advanced = form.querySelector(".ooo-advanced-settings");
+      const notify = form.querySelector(".ooo-notify-settings");
+      const oooOn = toggleOn(enableOoo);
+      if (advanced) advanced.hidden = !oooOn;
+      if (notify) notify.hidden = false;
+    }
+  }
+
   function updateOooEnabledState() {
     const form = document.querySelector(".ooo-settings-form");
     if (!form) return;
+    if (isExchangeSyncActive(form)) return;
+
     const enableOoo = form.querySelector('mdc-toggle[name="enableOoo"]');
     const advanced = form.querySelector(".ooo-advanced-settings");
+    const notify = form.querySelector(".ooo-notify-settings");
     const message = form.querySelector('mdc-textarea[name="oooMessage"]');
     const oooOn = toggleOn(enableOoo);
     if (advanced) advanced.hidden = !oooOn;
+    if (notify) notify.hidden = !oooOn;
     setFieldEnabled(message, oooOn);
     if (!oooOn) {
       clearEndDateError(form);
@@ -54,7 +98,7 @@
 
   function updateEndDateFields() {
     const form = document.querySelector(".ooo-settings-form");
-    if (!form) return;
+    if (!form || isExchangeSyncActive(form)) return;
     const hasEndDate = form.querySelector('mdc-toggle[name="hasOooEndDate"]');
     const endOptions = form.querySelector(".ooo-end-options");
     if (!endOptions) return;
@@ -90,6 +134,11 @@
   }
 
   function validateEndDateFuture(form) {
+    if (isExchangeSyncActive(form)) {
+      clearEndDateError(form);
+      return true;
+    }
+
     const enableOoo = toggleOn(form.querySelector('mdc-toggle[name="enableOoo"]'));
     if (!enableOoo) {
       clearEndDateError(form);
@@ -198,9 +247,13 @@
     const enableOooToggle = form.querySelector('mdc-toggle[name="enableOoo"]');
     enableOooToggle?.addEventListener("change", updateOooEnabledState);
 
+    const useExchangeToggle = form.querySelector('mdc-toggle[name="useExchangeOoo"]');
+    useExchangeToggle?.addEventListener("change", updateExchangeSyncMode);
+
     const endDateToggle = form.querySelector('mdc-toggle[name="hasOooEndDate"]');
     endDateToggle?.addEventListener("change", updateEndDateFields);
 
+    updateExchangeSyncMode();
     updateOooEnabledState();
     updateColleagueFields();
     updateEndDateFields();

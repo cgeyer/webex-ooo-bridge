@@ -153,12 +153,25 @@ function layoutStyles() {
       line-height: inherit;
     }
     .ooo-form { display: flex; flex-direction: column; gap: 1.25rem; margin-top: 1.25rem; }
+    .ooo-exchange-managed {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
     .ooo-advanced-settings {
       display: flex;
       flex-direction: column;
       gap: 1rem;
     }
-    .ooo-advanced-settings[hidden] { display: none; }
+    .ooo-advanced-settings[hidden],
+    .ooo-notify-settings[hidden] { display: none; }
+    .ooo-exchange-hint {
+      margin: 0;
+      font-size: 0.875rem;
+      line-height: 1.4;
+      color: var(--mds-color-theme-text-secondary-normal);
+    }
+    .ooo-exchange-hint .ooo-button { margin-top: 0.5rem; }
     .ooo-settings-card {
       --mdc-card-width: 100%;
       width: 100%;
@@ -335,6 +348,31 @@ export function dashboardPage(profile, webhookHint) {
   const internalMessageHidden =
     profile.sendOooToColleagues && !profile.useSameColleagueMessage ? "" : " hidden";
   const internalMessage = profile.internalOooMessage || profile.oooMessage;
+  const useExchangeOooChecked = profile.useExchangeOoo ? " checked" : "";
+  const oooNotifyHidden =
+    profile.enableOoo || (profile.exchangeSyncEligible && profile.useExchangeOoo) ? "" : " hidden";
+  const exchangeToggleDisabled =
+    profile.exchangeSyncEligible && !profile.exchangeSyncAvailable ? " disabled" : "";
+
+  const exchangeCardHtml = profile.exchangeSyncEligible
+    ? settingsCard(
+        "Exchange 365",
+        `
+              <mdc-toggle
+                name="useExchangeOoo"
+                label="Use Exchange automatic reply settings"
+                value="1"${useExchangeOooChecked}${exchangeToggleDisabled}
+              ></mdc-toggle>
+              ${
+                profile.exchangeSyncAvailable
+                  ? profile.graphConnected
+                    ? `<p class="ooo-exchange-hint">Microsoft 365 is connected. Out of office text and schedule are loaded from Exchange when you save or sign in.</p>`
+                    : `<p class="ooo-exchange-hint">Connect Microsoft 365 to load your Exchange automatic replies.
+                <a href="/auth/microsoft" class="ooo-button ooo-button-secondary">Connect Microsoft 365</a></p>`
+                  : `<p class="ooo-exchange-hint">Exchange sync is not configured on this server. Contact your administrator.</p>`
+              }`
+      )
+    : "";
 
   return renderPage({
     title: "Settings — Webex Out of Office",
@@ -357,7 +395,9 @@ export function dashboardPage(profile, webhookHint) {
               html: `Welcome ${escapeHtml(welcomeName)}`,
             },
           ])}
-          <form method="post" action="/settings" class="ooo-form ooo-settings-form" data-ooo-end-future-error="${escapeHtml(OOO_END_MUST_BE_FUTURE_ERROR)}">
+          <form method="post" action="/settings" class="ooo-form ooo-settings-form" data-ooo-end-future-error="${escapeHtml(OOO_END_MUST_BE_FUTURE_ERROR)}" data-exchange-eligible="${profile.exchangeSyncEligible ? "true" : "false"}" data-exchange-sync-active="${profile.useExchangeOoo ? "true" : "false"}">
+            ${exchangeCardHtml}
+            <div class="ooo-exchange-managed">
             ${settingsCard(
               "Out of office",
               `
@@ -441,6 +481,9 @@ export function dashboardPage(profile, webhookHint) {
                 </div>
               </div>`
               )}
+            </div>
+            </div>
+            <div class="ooo-notify-settings"${oooNotifyHidden}>
               ${settingsCard(
                 "During absence",
                 `

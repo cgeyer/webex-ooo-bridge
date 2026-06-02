@@ -3,6 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { config } from "./config.js";
 import { decryptToken, encryptToken } from "./crypto-tokens.js";
+import { isExchangeSyncEligible } from "./exchange-eligibility.js";
 
 const dbFile = path.isAbsolute(config.dbPath) ? config.dbPath : path.join(process.cwd(), config.dbPath);
 
@@ -23,6 +24,10 @@ const dbFile = path.isAbsolute(config.dbPath) ? config.dbPath : path.join(proces
  *   oooEndDate: string,
  *   oooEndTime: string,
  *   oooEndTimezone: string,
+ *   useExchangeOoo: boolean,
+ *   graphAccessToken: string,
+ *   graphRefreshToken: string,
+ *   graphAccessTokenExpiresAt: number,
  *   webhookIds: string[],
  *   createdAt: number,
  *   updatedAt: number,
@@ -42,6 +47,10 @@ const dbFile = path.isAbsolute(config.dbPath) ? config.dbPath : path.join(proces
  *   oooEndDate: string,
  *   oooEndTime: string,
  *   oooEndTimezone: string,
+ *   exchangeSyncEligible: boolean,
+ *   exchangeSyncAvailable: boolean,
+ *   useExchangeOoo: boolean,
+ *   graphConnected: boolean,
  *   webhookIds: string[],
  *   createdAt: number,
  *   updatedAt: number,
@@ -102,6 +111,10 @@ function migrateUsersTable(conn) {
   addColumn("ALTER TABLE users ADD COLUMN ooo_end_date TEXT NOT NULL DEFAULT ''");
   addColumn("ALTER TABLE users ADD COLUMN ooo_end_time TEXT NOT NULL DEFAULT ''");
   addColumn("ALTER TABLE users ADD COLUMN ooo_end_timezone TEXT NOT NULL DEFAULT ''");
+  addColumn("ALTER TABLE users ADD COLUMN use_exchange_ooo INTEGER NOT NULL DEFAULT 0");
+  addColumn("ALTER TABLE users ADD COLUMN graph_access_token_enc TEXT NOT NULL DEFAULT ''");
+  addColumn("ALTER TABLE users ADD COLUMN graph_refresh_token_enc TEXT NOT NULL DEFAULT ''");
+  addColumn("ALTER TABLE users ADD COLUMN graph_access_token_expires_at INTEGER NOT NULL DEFAULT 0");
 }
 
 /**
@@ -133,6 +146,16 @@ function rowToUser(row) {
     oooEndDate: String(row.ooo_end_date ?? ""),
     oooEndTime: String(row.ooo_end_time ?? ""),
     oooEndTimezone: String(row.ooo_end_timezone ?? ""),
+    useExchangeOoo: Boolean(row.use_exchange_ooo),
+    graphAccessToken:
+      String(row.graph_access_token_enc ?? "") !== ""
+        ? decryptToken(String(row.graph_access_token_enc))
+        : "",
+    graphRefreshToken:
+      String(row.graph_refresh_token_enc ?? "") !== ""
+        ? decryptToken(String(row.graph_refresh_token_enc))
+        : "",
+    graphAccessTokenExpiresAt: Number(row.graph_access_token_expires_at ?? 0),
     webhookIds,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -144,10 +167,15 @@ function rowToUser(row) {
  * @returns {UserProfile}
  */
 export function toUserProfile(user) {
+  const exchangeSyncEligible = isExchangeSyncEligible(user.email);
   return {
     personId: user.personId,
     email: user.email,
     displayName: user.displayName,
+    exchangeSyncEligible,
+    exchangeSyncAvailable: exchangeSyncEligible && config.exchangeSync.enabled,
+    useExchangeOoo: user.useExchangeOoo,
+    graphConnected: Boolean(user.graphRefreshToken?.trim()),
     enableOoo: user.enableOoo,
     oooMessage: user.oooMessage,
     sendOooToColleagues: user.sendOooToColleagues,
@@ -180,8 +208,9 @@ export function upsertUser(user) {
         person_id, email, display_name, access_token_enc, refresh_token_enc, access_token_expires_at,
         enable_ooo, ooo_message, send_ooo_to_colleagues, use_same_colleague_message, internal_ooo_message,
         notify_incoming_messages, has_ooo_end_date, ooo_end_date, ooo_end_time, ooo_end_timezone,
+        use_exchange_ooo, graph_access_token_enc, graph_refresh_token_enc, graph_access_token_expires_at,
         webhook_ids_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(person_id) DO UPDATE SET
         email = excluded.email,
         display_name = excluded.display_name,
@@ -198,6 +227,10 @@ export function upsertUser(user) {
         ooo_end_date = excluded.ooo_end_date,
         ooo_end_time = excluded.ooo_end_time,
         ooo_end_timezone = excluded.ooo_end_timezone,
+        use_exchange_ooo = excluded.use_exchange_ooo,
+        graph_access_token_enc = excluded.graph_access_token_enc,
+        graph_refresh_token_enc = excluded.graph_refresh_token_enc,
+        graph_access_token_expires_at = excluded.graph_access_token_expires_at,
         webhook_ids_json = excluded.webhook_ids_json,
         updated_at = excluded.updated_at`
     )
@@ -218,6 +251,10 @@ export function upsertUser(user) {
       user.oooEndDate ?? "",
       user.oooEndTime ?? "",
       user.oooEndTimezone ?? "",
+      user.useExchangeOoo ? 1 : 0,
+      user.graphAccessToken ? encryptToken(user.graphAccessToken) : "",
+      user.graphRefreshToken ? encryptToken(user.graphRefreshToken) : "",
+      user.graphAccessTokenExpiresAt ?? 0,
       JSON.stringify(user.webhookIds ?? []),
       createdAt,
       updatedAt

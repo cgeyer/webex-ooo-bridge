@@ -22,6 +22,18 @@ const envSchema = z.object({
     .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().min(1).optional()),
   WEBEX_BOT_EMAIL: z
     .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().email().optional()),
+  EXCHANGE_SYNC_EMAIL_DOMAIN: z
+    .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().min(1).optional()),
+  MICROSOFT_CLIENT_ID: z
+    .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().min(1).optional()),
+  MICROSOFT_CLIENT_SECRET: z
+    .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().min(1).optional()),
+  MICROSOFT_TENANT_ID: z
+    .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().min(1).optional()),
+  MICROSOFT_REDIRECT_URI: z
+    .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().url().optional()),
+  EXCHANGE_SYNC_UTC_TIMEZONE_ALIAS: z
+    .preprocess((v) => (v === "" || v === undefined ? undefined : v), z.string().min(1).optional()),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -44,7 +56,27 @@ function parseKey32(name, value) {
   return buf;
 }
 
+const exchangeEmailDomain = data.EXCHANGE_SYNC_EMAIL_DOMAIN?.trim().toLowerCase() ?? "";
+const microsoftConfigured = Boolean(
+  data.MICROSOFT_CLIENT_ID &&
+    data.MICROSOFT_CLIENT_SECRET &&
+    data.MICROSOFT_REDIRECT_URI &&
+    (data.MICROSOFT_TENANT_ID || exchangeEmailDomain)
+);
+
 export const config = {
+  exchangeSync: {
+    emailDomain: exchangeEmailDomain,
+    enabled: Boolean(exchangeEmailDomain && microsoftConfigured),
+    clientId: data.MICROSOFT_CLIENT_ID ?? "",
+    clientSecret: data.MICROSOFT_CLIENT_SECRET ?? "",
+    tenantId: data.MICROSOFT_TENANT_ID ?? exchangeEmailDomain ?? "common",
+    redirectUri: data.MICROSOFT_REDIRECT_URI ?? "",
+    scopes: "offline_access MailboxSettings.Read User.Read",
+    authorizeUrl: `https://login.microsoftonline.com/${data.MICROSOFT_TENANT_ID ?? exchangeEmailDomain ?? "common"}/oauth2/v2.0/authorize`,
+    /** When Graph returns UTC for scheduled end times, store this IANA zone in the UI instead. */
+    utcTimeZoneAlias: data.EXCHANGE_SYNC_UTC_TIMEZONE_ALIAS?.trim() || "Europe/London",
+  },
   webex: {
     clientId: data.WEBEX_CLIENT_ID,
     clientSecret: data.WEBEX_CLIENT_SECRET,
