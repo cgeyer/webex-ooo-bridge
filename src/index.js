@@ -29,6 +29,7 @@ const appAssetsDir = path.join(__dirname, "assets");
 const momentumTokensDir = path.join(__dirname, "../node_modules/@momentum-design/tokens/dist/css");
 const momentumFontsDir = path.join(__dirname, "../node_modules/@momentum-design/fonts/dist");
 const momentumComponentsDir = path.join(__dirname, "../node_modules/@momentum-design/components/dist");
+const momentumIconsSvgDir = path.join(__dirname, "../node_modules/@momentum-design/icons/dist/svg");
 
 const log = pino({ level: config.logLevel });
 const app = express();
@@ -54,6 +55,7 @@ app.use("/assets/app", express.static(appAssetsDir));
 app.use("/assets/momentum/tokens", express.static(momentumTokensDir));
 app.use("/assets/momentum/fonts", express.static(momentumFontsDir));
 app.use("/assets/momentum/components", express.static(momentumComponentsDir));
+app.use("/assets/momentum/icons/svg", express.static(momentumIconsSvgDir));
 app.use(pinoHttp({ logger: log }));
 app.use(sessionCookieParser);
 app.use(loadSession);

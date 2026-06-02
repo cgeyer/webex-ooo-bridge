@@ -8,6 +8,7 @@ export const MDS = {
   fontsCss: "/assets/momentum/fonts/css/fonts.css",
   fontWoff2: "/assets/momentum/fonts/inter/Inter.var.woff2",
   componentsJs: "/assets/momentum/components/browser/index.js",
+  iconsSvgBase: "/assets/momentum/icons/svg",
   oooEndClientJs: "/assets/app/ooo-end-client.js",
   settingsFormJs: "/assets/app/settings-form.js",
   // Typography tokens (--mds-font-family-primary, etc.) live on .mds-typography, not the theme class.
@@ -59,7 +60,13 @@ function renderPage({ title, content, scripts = "" }) {
 </head>
 <body>
   <mdc-themeprovider themeclass="${MDS.themeClass}">
-    <mdc-iconprovider icon-set="momentum-icons">
+    <mdc-iconprovider
+      icon-set="custom-icons"
+      url="${MDS.iconsSvgBase}"
+      file-extension="svg"
+      cache-strategy="in-memory-cache"
+      cache-name="ooo-momentum-icons"
+    >
       <div class="ooo-app">
         <mdc-appheader>
           <mdc-text slot="leading" type="heading-small-bold">Webex Out of Office</mdc-text>
